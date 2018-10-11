@@ -249,6 +249,16 @@ Concretely, here are the requisite packages in some Linux distributions:
 * On Ubuntu 16.04 LTS:
 
         $ sudo apt-get install build-essential cmake git libgmp3-dev libprocps4-dev python-markdown libboost-all-dev libssl-dev
+Added by 3for. If an error occurs:
+
+        dpkg: error processing package cups-browsed (--configure):
+Do: 
+
+        $ sudo mv /var/lib/dpkg/info/ /var/lib/dpkg/info_backup/
+        $ sudo mkdir /var/lib/dpkg/info/
+        $ sudo apt-get update
+        $ sudo apt-get install cpus-browsed
+        $ sudo apt-get install build-essential cmake git libgmp3-dev libprocps4-dev python-markdown libboost-all-dev libssl-dev
 
 * On Ubuntu 14.04 LTS:
 
