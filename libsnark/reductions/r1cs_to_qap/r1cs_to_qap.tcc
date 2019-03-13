@@ -107,6 +107,7 @@ qap_instance_evaluation<FieldT> r1cs_to_qap_instance_map_with_evaluation(const r
 {
     libff::enter_block("Call to r1cs_to_qap_instance_map_with_evaluation");
 
+    //for 1101, evaluation_domain 对应为 class step_radix2_domain，对应的m为1024+128=1152，big_m=1024，small_m=128
     const std::shared_ptr<libfqfft::evaluation_domain<FieldT> > domain = libfqfft::get_evaluation_domain<FieldT>(cs.num_constraints() + cs.num_inputs() + 1);
 
     std::vector<FieldT> At, Bt, Ct, Ht;
@@ -114,28 +115,29 @@ qap_instance_evaluation<FieldT> r1cs_to_qap_instance_map_with_evaluation(const r
     At.resize(cs.num_variables()+1, FieldT::zero());
     Bt.resize(cs.num_variables()+1, FieldT::zero());
     Ct.resize(cs.num_variables()+1, FieldT::zero());
-    Ht.reserve(domain->m+1);
+    Ht.reserve(domain->m+1); 
 
-    const FieldT Zt = domain->compute_vanishing_polynomial(t);
+    const FieldT Zt = domain->compute_vanishing_polynomial(t); // ((t^big_m) - FieldT::one()) * ((t^small_m) - (omega^small_m));
 
     libff::enter_block("Compute evaluations of A, B, C, H at t");
-    const std::vector<FieldT> u = domain->evaluate_all_lagrange_polynomials(t);
+    //L=u点乘S，u的大小为big_m+small_m
+    const std::vector<FieldT> u = domain->evaluate_all_lagrange_polynomials(t); //lagrange interpolation见本人博客分析。https://blog.csdn.net/mutourend/article/details/88239625
     /**
      * add and process the constraints
      *     input_i * 0 = 0
      * to ensure soundness of input consistency
      */
-    for (size_t i = 0; i <= cs.num_inputs(); ++i)
+    for (size_t i = 0; i <= cs.num_inputs(); ++i) //100
     {
-        At[i] = u[cs.num_constraints() + i];
+        At[i] = u[cs.num_constraints() + i]; //At[0~100]取自u[1000~1100]
     }
     /* process all other constraints */
-    for (size_t i = 0; i < cs.num_constraints(); ++i)
+    for (size_t i = 0; i < cs.num_constraints(); ++i) //1000，此循环内u[i]取值范围为u[0~999],At/Bt/Ct索引取值范围为0~1000值为//sum(u[i]*a.terms[j].coeff)
     {
         for (size_t j = 0; j < cs.constraints[i].a.terms.size(); ++j)
         {
             At[cs.constraints[i].a.terms[j].index] +=
-                u[i]*cs.constraints[i].a.terms[j].coeff;
+                u[i]*cs.constraints[i].a.terms[j].coeff; //sum(u[i]*a.terms[j].coeff)
         }
 
         for (size_t j = 0; j < cs.constraints[i].b.terms.size(); ++j)
@@ -154,7 +156,7 @@ qap_instance_evaluation<FieldT> r1cs_to_qap_instance_map_with_evaluation(const r
     FieldT ti = FieldT::one();
     for (size_t i = 0; i < domain->m+1; ++i)
     {
-        Ht.emplace_back(ti);
+        Ht.emplace_back(ti); //Ht中记录的是1,t,t^2,t^3,...,t^m
         ti *= t;
     }
     libff::leave_block("Compute evaluations of A, B, C, H at t");
@@ -162,9 +164,9 @@ qap_instance_evaluation<FieldT> r1cs_to_qap_instance_map_with_evaluation(const r
     libff::leave_block("Call to r1cs_to_qap_instance_map_with_evaluation");
 
     return qap_instance_evaluation<FieldT>(domain,
-                                           cs.num_variables(),
-                                           domain->m,
-                                           cs.num_inputs(),
+                                           cs.num_variables(), //1100
+                                           domain->m, //1024+128, this is the degree
+                                           cs.num_inputs(), //100
                                            t,
                                            std::move(At),
                                            std::move(Bt),

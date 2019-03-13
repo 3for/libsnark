@@ -387,9 +387,9 @@ template<typename ramT>
 void ram_compliance_predicate_handler<ramT>::generate_r1cs_constraints()
 {
     libff::print_indent(); printf("* Message size: %zu\n", next->all_vars.size());
-    libff::print_indent(); printf("* Address size: %zu\n", addr_size);
-    libff::print_indent(); printf("* CPU state size: %zu\n", ap.cpu_state_size());
-    libff::print_indent(); printf("* Digest size: %zu\n", digest_size);
+    libff::print_indent(); printf("* Address size: %zu\n", addr_size); //29
+    libff::print_indent(); printf("* CPU state size: %zu\n", ap.cpu_state_size()); // k * w + 2=16*32+2=514，变量名cpu_state_0~cpu_state_513
+    libff::print_indent(); printf("* Digest size: %zu\n", digest_size); //298
 
     PROFILE_CONSTRAINTS(this->pb, "handle next_type, arity and cur_type")
     {
