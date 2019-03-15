@@ -251,12 +251,12 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
     /* draw random element at which the QAP is evaluated */
     const  libff::Fr<ppT> t = libff::Fr<ppT>::random_element();
 
-    qap_instance_evaluation<libff::Fr<ppT> > qap_inst = r1cs_to_qap_instance_map_with_evaluation(cs_copy, t);
+    qap_instance_evaluation<libff::Fr<ppT> > qap_inst = r1cs_to_qap_instance_map_with_evaluation(cs_copy, t); //看论文。。。[BCTV14]
 
-    libff::print_indent(); printf("* QAP number of variables: %zu\n", qap_inst.num_variables());
-    libff::print_indent(); printf("* QAP pre degree: %zu\n", cs_copy.constraints.size());
-    libff::print_indent(); printf("* QAP degree: %zu\n", qap_inst.degree());
-    libff::print_indent(); printf("* QAP number of input variables: %zu\n", qap_inst.num_inputs());
+    libff::print_indent(); printf("* QAP number of variables: %zu\n", qap_inst.num_variables()); //1100
+    libff::print_indent(); printf("* QAP pre degree: %zu\n", cs_copy.constraints.size()); //1000
+    libff::print_indent(); printf("* QAP degree: %zu\n", qap_inst.degree()); //1152=1024+128
+    libff::print_indent(); printf("* QAP number of input variables: %zu\n", qap_inst.num_inputs()); //100
 
     libff::enter_block("Compute query densities");
     size_t non_zero_At = 0, non_zero_Bt = 0, non_zero_Ct = 0, non_zero_Ht = 0;
@@ -282,6 +282,7 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
             ++non_zero_Ht;
         }
     }
+    //non_zero_At = 514, non_zero_Bt = 492, non_zero_Ct = 1100, non_zero_Ht = 1153;
     libff::leave_block("Compute query densities");
 
     libff::Fr_vector<ppT> At = std::move(qap_inst.At); // qap_inst.At is now in unspecified state, but we do not use it later
@@ -305,32 +306,33 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
 
     // consrtuct the same-coefficient-check query (must happen before zeroing out the prefix of At)
     libff::Fr_vector<ppT> Kt;
-    Kt.reserve(qap_inst.num_variables()+4);
-    for (size_t i = 0; i < qap_inst.num_variables()+1; ++i)
+    Kt.reserve(qap_inst.num_variables()+4); //1100+4=1104，reserve修改Kt vector capacity
+    for (size_t i = 0; i < qap_inst.num_variables()+1; ++i)//0~1100
     {
         Kt.emplace_back( beta * (rA * At[i] + rB * Bt[i] + rC * Ct[i] ) );
     }
-    Kt.emplace_back(beta * rA * qap_inst.Zt);
+    Kt.emplace_back(beta * rA * qap_inst.Zt);//妙妙妙！！对应[BCTV14]论文P25页，这三个对应的即为Am+1=Bm+2=Cm+3=Z.
     Kt.emplace_back(beta * rB * qap_inst.Zt);
     Kt.emplace_back(beta * rC * qap_inst.Zt);
 
     /* zero out prefix of At and stick it into IC coefficients */
     libff::Fr_vector<ppT> IC_coefficients;
     IC_coefficients.reserve(qap_inst.num_inputs() + 1);
-    for (size_t i = 0; i < qap_inst.num_inputs() + 1; ++i)
+    for (size_t i = 0; i < qap_inst.num_inputs() + 1; ++i) //0~100。将At[0~100]的值移至IC_coefficients中，再将At[0~100]值清零。//At[0~100]取自u[1000~1100]
     {
         IC_coefficients.emplace_back(At[i]);
         assert(!IC_coefficients[i].is_zero());
         At[i] = libff::Fr<ppT>::zero();
     }
 
-    const size_t g1_exp_count = 2*(non_zero_At - qap_inst.num_inputs() + non_zero_Ct) + non_zero_Bt + non_zero_Ht + Kt.size();
-    const size_t g2_exp_count = non_zero_Bt;
+    ////non_zero_At = 514, non_zero_Bt = 492, non_zero_Ct = 1100, non_zero_Ht = 1153;
+    const size_t g1_exp_count = 2*(non_zero_At - qap_inst.num_inputs() + non_zero_Ct) + non_zero_Bt + non_zero_Ht + Kt.size(); //5777
+    const size_t g2_exp_count = non_zero_Bt; //492
 
-    size_t g1_window = libff::get_exp_window_size<libff::G1<ppT> >(g1_exp_count);
-    size_t g2_window = libff::get_exp_window_size<libff::G2<ppT> >(g2_exp_count);
-    libff::print_indent(); printf("* G1 window: %zu\n", g1_window);
-    libff::print_indent(); printf("* G2 window: %zu\n", g2_window);
+    size_t g1_window = libff::get_exp_window_size<libff::G1<ppT> >(g1_exp_count);  //10
+    size_t g2_window = libff::get_exp_window_size<libff::G2<ppT> >(g2_exp_count); //7
+    libff::print_indent(); printf("* G1 window: %zu\n", g1_window); //10
+    libff::print_indent(); printf("* G2 window: %zu\n", g2_window); //7
 
 #ifdef MULTICORE
     const size_t chunks = omp_get_max_threads(); // to override, set OMP_NUM_THREADS env var or call omp_set_num_threads()
@@ -339,6 +341,7 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
 #endif
 
     libff::enter_block("Generating G1 multiexp table");
+    //libff::Fr<ppT>::size_in_bits() = bn128_Fr::num_bits = 254;  
     libff::window_table<libff::G1<ppT> > g1_table = get_window_table(libff::Fr<ppT>::size_in_bits(), g1_window, libff::G1<ppT>::one());
     libff::leave_block("Generating G1 multiexp table");
 
@@ -347,6 +350,7 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
     libff::leave_block("Generating G2 multiexp table");
 
     libff::enter_block("Generate R1CS proving key");
+    //At.size():1102, Bt.size():1102,Ct.size():1102,Kt.size():,Ht.size():1153
 
     libff::enter_block("Generate knowledge commitments");
     libff::enter_block("Compute the A-query", false);

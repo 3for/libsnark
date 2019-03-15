@@ -141,11 +141,11 @@ bool r1cs_constraint_system<FieldT>::is_satisfied(const r1cs_primary_input<Field
 
     for (size_t c = 0; c < constraints.size(); ++c)
     {
-        const FieldT ares = constraints[c].a.evaluate(full_variable_assignment);
+        const FieldT ares = constraints[c].a.evaluate(full_variable_assignment); //add sum for coeff_i*a_i
         const FieldT bres = constraints[c].b.evaluate(full_variable_assignment);
         const FieldT cres = constraints[c].c.evaluate(full_variable_assignment);
 
-        if (!(ares*bres == cres))
+        if (!(ares*bres == cres)) //check if < A , X > * < B , X > = < C , X >
         {
 #ifdef DEBUG
             auto it = constraint_annotations.find(c);
