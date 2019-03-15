@@ -1,6 +1,10 @@
 libsnark: a C++ library for zkSNARK proofs
 ================================================================================
 
+NEEDED TO FIX!!!
+1) [BCTV14]Get updated for pkA' (start from n+1 instead of 0, n denote the input size. )in page 25. Code in \libsnark\zk_proof_systems\ppzksnark\r1cs_ppzksnark\r1cs_ppzksnark.tcc A_query should be changed.
+https://github.com/BTCPrivate/BitcoinPrivate/issues/210
+
 --------------------------------------------------------------------------------
 Authors and contacts
 --------------------------------------------------------------------------------
