@@ -264,7 +264,7 @@ r1cs_sp_ppzkpcd_keypair<PCD_ppT> r1cs_sp_ppzkpcd_generator(const r1cs_sp_ppzkpcd
  * that attests to the compliance of the output message.
  */
 template <typename PCD_ppT>
-r1cs_sp_ppzkpcd_proof<PCD_ppT>  (const r1cs_sp_ppzkpcd_proving_key<PCD_ppT> &pk,
+r1cs_sp_ppzkpcd_proof<PCD_ppT> r1cs_sp_ppzkpcd_prover (const r1cs_sp_ppzkpcd_proving_key<PCD_ppT> &pk,
                                                       const r1cs_sp_ppzkpcd_primary_input<PCD_ppT> &primary_input,
                                                       const r1cs_sp_ppzkpcd_auxiliary_input<PCD_ppT> &auxiliary_input,
                                                       const std::vector<r1cs_sp_ppzkpcd_proof<PCD_ppT> > &incoming_proofs);

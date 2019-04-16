@@ -435,6 +435,14 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
     * G2 elements in VK: 5
     * VK size in bits: 35210
     */
+    /*
+    [BCTV14]论文中的理论依据为：
+    Key sizes. When invoked on a circuit C : Frn × Frh → Frl with a wires 
+    and b (bilinear) gates, the key generator outputs:
+    • pk with (6a + b + l + 25) G1-elements and (a + 4) G2-elements;
+    • vk with (n + 3) G1-elements and 5 G2-elements.
+    Proof size. The proof always has 7 G1-elements and 1 G2-element
+    */
     pk.print_size();
     vk.print_size();
 
