@@ -1,0 +1,60 @@
+
+```
+/**
+ * A window table stores window sizes for different instance sizes for fixed-base multi-scalar multiplications.
+ */
+template<typename T>
+using window_table = std::vector<std::vector<T> >;
+
+template<typename EC_ppT>
+using G1 = typename EC_ppT::G1_type;
+   typedef bn128_G1 G1_type;
+   typedef mnt4_G1 G1_type;
+
+/**
+ * Compute window size for the given number of scalars.
+ */
+template<typename T>
+size_t get_exp_window_size(const size_t num_scalars);
+
+template<typename T>
+size_t get_exp_window_size(const size_t num_scalars)
+{
+    if (T::fixed_base_exp_window_table.empty())
+    {
+#ifdef LOWMEM
+        return 14;
+#else
+        return 17;
+#endif
+    }
+    size_t window = 1;
+    for (long i = T::fixed_base_exp_window_table.size()-1; i >= 0; --i)
+    {
+#ifdef DEBUG
+        if (!inhibit_profiling_info)
+        {
+            printf("%ld %zu %zu\n", i, num_scalars, T::fixed_base_exp_window_table[i]);
+        }
+#endif
+        if (T::fixed_base_exp_window_table[i] != 0 && num_scalars >= T::fixed_base_exp_window_table[i])
+        {
+            window = i+1;
+            break;
+        }
+    }
+
+    if (!inhibit_profiling_info)
+    {
+        print_indent(); printf("Choosing window size %zu for %zu elements\n", window, num_scalars);
+    }
+
+#ifdef LOWMEM
+    window = std::min((size_t)14, window);
+#endif
+    return window;
+}
+
+```
+
+

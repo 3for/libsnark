@@ -1,0 +1,26 @@
+ ```
+    ram_compliance_predicate_handler<ramT> cp_handler(ap);
+	cp_handler.generate_r1cs_constraints();
+ ```
+ 
+ 
+ 
+ 
+ 对应细节为：
+ ```
+ #define PROFILE_CONSTRAINTS(pb, annotation)                             \
+    for (size_t _num_constraints_before = pb.num_constraints(), _iter = (++constraint_profiling_indent, 0), _cp_pos = constraint_profiling_table.size(); \
+         _iter == 0;                                                    \
+         constraint_profiling_table.insert(constraint_profiling_table.begin() + _cp_pos, constraint_profiling_entry{--constraint_profiling_indent, annotation, pb.num_constraints() - _num_constraints_before}), \
+         _iter = 1)
+		 
+
+ ```
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
