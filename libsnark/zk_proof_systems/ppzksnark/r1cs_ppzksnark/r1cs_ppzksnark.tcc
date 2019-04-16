@@ -424,6 +424,17 @@ r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constr
                                                                          std::move(K_query),
                                                                          std::move(cs_copy));
 
+    /*
+    打印内容为：
+    * G1 elements in PK: 7767
+    * Non-zero G1 elements in PK: 5780
+    * G2 elements in PK: 1102
+    * Non-zero G2 elements in PK: 493
+    * PK size in bits: 1853349
+    * G1 elements in VK: 102
+    * G2 elements in VK: 5
+    * VK size in bits: 35210
+    */
     pk.print_size();
     vk.print_size();
 
