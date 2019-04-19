@@ -1,0 +1,244 @@
+libff::enter_block("Compute the A-query", false);
+knowledge_commitment_vector<libff::G1<ppT>, libff::G1<ppT> > A_query = kc_batch_exp(libff::Fr<ppT>::size_in_bits(), g1_window, g1_window, g1_table, g1_table, rA, rA*alphaA, At, chunks);
+libff::leave_block("Compute the A-query", false);
+
+
+/**
+ * A knowledge commitment vector is a sparse vector of knowledge commitments.
+ */
+template<typename T1, typename T2>
+using knowledge_commitment_vector = sparse_vector<knowledge_commitment<T1, T2> >;
+
+/**
+ * A sparse vector is a list of indices along with corresponding values.
+ * The indices are selected from the set {0,1,...,domain_size-1}.
+ */
+template<typename T>
+struct sparse_vector {
+
+    std::vector<size_t> indices;
+    std::vector<T> values;
+    size_t domain_size_;
+};
+
+/**
+ * A knowledge commitment is a pair (g,h) where g is in T1 and h in T2,
+ * and T1 and T2 are groups (written additively).
+ *
+ * Such pairs form a group by defining:
+ * - "zero" = (0,0)
+ * - "one" = (1,1)
+ * - a * (g,h) + b * (g',h') := ( a * g + b * g', a * h + b * h').
+ */
+template<typename T1, typename T2>
+struct knowledge_commitment {
+
+    T1 g;
+    T2 h;
+};
+
+```
+template<typename T1, typename T2, typename FieldT>
+knowledge_commitment_vector<T1, T2> kc_batch_exp(const size_t scalar_size, //254
+                                                 const size_t T1_window, //10
+                                                 const size_t T2_window, //10
+                                                 const libff::window_table<T1> &T1_table, //g1_table,即为powers_of_g
+                                                 const libff::window_table<T2> &T2_table, //g1_table,即为powers_of_g
+                                                 const FieldT &T1_coeff, //rA
+                                                 const FieldT &T2_coeff, //rA*alphaA
+                                                 const std::vector<FieldT> &v, //At
+                                                 const size_t suggested_num_chunks) //1
+{
+    knowledge_commitment_vector<T1, T2> res;
+    res.domain_size_ = v.size(); //At.size(),//
+
+    size_t nonzero = 0;
+    for (size_t i = 0; i < v.size(); ++i)
+    {
+        nonzero += (v[i].is_zero() ? 0 : 1);
+    } //nonzero记录的是v中非零值的个数。
+
+    const size_t num_chunks = std::max((size_t)1, std::min(nonzero, suggested_num_chunks));
+
+    if (!libff::inhibit_profiling_info)
+    {
+        libff::print_indent(); printf("Non-zero coordinate count: %zu/%zu (%0.2f%%)\n", nonzero, v.size(), 100.*nonzero/v.size());
+    }
+
+    std::vector<knowledge_commitment_vector<T1, T2> > tmp(num_chunks);
+    std::vector<size_t> chunk_pos(num_chunks+1);
+
+    const size_t chunk_size = nonzero / num_chunks;
+    const size_t last_chunk = nonzero - chunk_size * (num_chunks - 1);
+
+    chunk_pos[0] = 0;
+
+    size_t cnt = 0;
+    size_t chunkno = 1;
+
+    for (size_t i = 0; i < v.size(); ++i)
+    {
+        cnt += (v[i].is_zero() ? 0 : 1);
+        if (cnt == chunk_size && chunkno < num_chunks)
+        {
+            chunk_pos[chunkno] = i;
+            cnt = 0;
+            ++chunkno;
+        }
+    }
+
+    chunk_pos[num_chunks] = v.size();
+
+#ifdef MULTICORE
+#pragma omp parallel for
+#endif
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        tmp[i] = kc_batch_exp_internal<T1, T2, FieldT>(scalar_size, T1_window, T2_window, T1_table, T2_table, T1_coeff, T2_coeff, v,
+                                                       chunk_pos[i], chunk_pos[i+1], i == num_chunks - 1 ? last_chunk : chunk_size);
+#ifdef USE_MIXED_ADDITION
+        libff::batch_to_special<knowledge_commitment<T1, T2>>(tmp[i].values);
+#endif
+    }
+
+    if (num_chunks == 1)
+    {
+        tmp[0].domain_size_ = v.size();
+        return tmp[0];
+    }
+    else
+    {
+        for (size_t i = 0; i < num_chunks; ++i)
+        {
+            res.values.insert(res.values.end(), tmp[i].values.begin(), tmp[i].values.end());
+            res.indices.insert(res.indices.end(), tmp[i].indices.begin(), tmp[i].indices.end());
+        }
+        return res;
+    }
+}
+
+template<typename T1, typename T2, typename FieldT>
+knowledge_commitment_vector<T1, T2> kc_batch_exp_internal(const size_t scalar_size, //254
+                                                          const size_t T1_window, //10
+                                                          const size_t T2_window, //10
+                                                          const libff::window_table<T1> &T1_table, //g1_table,即为powers_of_g
+                                                          const libff::window_table<T2> &T2_table, //g1_table,即为powers_of_g
+                                                          const FieldT &T1_coeff, //rA
+                                                          const FieldT &T2_coeff, //rA*alphaA
+                                                          const std::vector<FieldT> &v, //At
+                                                          const size_t start_pos, //0
+                                                          const size_t end_pos, //At.size()
+                                                          const size_t expected_size) //At中非零值的个数。
+{
+    knowledge_commitment_vector<T1, T2> res;
+
+    res.values.reserve(expected_size);
+    res.indices.reserve(expected_size);
+
+    for (size_t pos = start_pos; pos != end_pos; ++pos)
+    {
+        if (!v[pos].is_zero())
+        {
+            res.values.emplace_back(knowledge_commitment<T1, T2>(windowed_exp(scalar_size, T1_window, T1_table, T1_coeff * v[pos]),
+                                                                 windowed_exp(scalar_size, T2_window, T2_table, T2_coeff * v[pos])));
+            res.indices.emplace_back(pos);
+        }
+    }
+
+    return res;
+}
+
+template<typename T, typename FieldT>
+T windowed_exp(const size_t scalar_size, //254
+               const size_t window, //10
+               const window_table<T> &powers_of_g,
+               const FieldT &pow) //rA*At[i] 或 rA*alphaA*At[i]
+{
+    const size_t outerc = (scalar_size+window-1)/window; //26
+    const bigint<FieldT::num_limbs> pow_val = pow.as_bigint();
+
+    /* exp */
+    T res = powers_of_g[0][0];
+
+    for (size_t outer = 0; outer < outerc; ++outer)
+    {
+        size_t inner = 0;
+        for (size_t i = 0; i < window; ++i)
+        {
+            if (pow_val.test_bit(outer*window + i))
+            {
+                inner |= 1u << i;
+            }
+        }
+
+        res = res + powers_of_g[outer][inner];
+    }
+
+    return res;
+}
+
+template<mp_size_t n, const bigint<n>& modulus>
+bigint<n> Fp_model<n,modulus>::as_bigint() const
+{
+    bigint<n> one;
+    one.clear();
+    one.data[0] = 1;
+
+    Fp_model<n, modulus> res(*this);
+    res.mul_reduce(one);
+
+    return (res.mont_repr);
+}
+
+
+template<mp_size_t n> //此处n值，对于mnt4 curve为5，对于bn128 curve为4。
+bool bigint<n>::test_bit(const std::size_t bitno) const
+{
+    if (bitno >= n * GMP_NUMB_BITS)
+    {
+        return false;
+    }
+    else
+    {
+        const std::size_t part = bitno/GMP_NUMB_BITS;
+        const std::size_t bit = bitno - (GMP_NUMB_BITS*part);
+        const mp_limb_t one = 1;
+        return (this->data[part] & (one<<bit)) != 0;
+    }
+}
+
+
+template<typename T, typename FieldT>
+std::vector<T> batch_exp(const size_t scalar_size,
+                         const size_t window,
+                         const window_table<T> &table,
+                         const std::vector<FieldT> &v)
+{
+    if (!inhibit_profiling_info)
+    {
+        print_indent();
+    }
+    std::vector<T> res(v.size(), table[0][0]);
+
+#ifdef MULTICORE
+#pragma omp parallel for
+#endif
+    for (size_t i = 0; i < v.size(); ++i)
+    {
+        res[i] = windowed_exp(scalar_size, window, table, v[i]);
+
+        if (!inhibit_profiling_info && (i % 10000 == 0))
+        {
+            printf(".");
+            fflush(stdout);
+        }
+    }
+
+    if (!inhibit_profiling_info)
+    {
+        printf(" DONE!\n");
+    }
+
+    return res;
+}
+```

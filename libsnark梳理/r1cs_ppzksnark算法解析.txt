@@ -1,0 +1,272 @@
+libsnark\zk_proof_systems\ppzksnark\r1cs_ppzksnark\r1cs_ppzksnark.hpp
+
+```
+/***************************** Main algorithms *******************************/
+
+/**
+ * A generator algorithm for the R1CS ppzkSNARK.
+ *
+ * Given a R1CS constraint system CS, this algorithm produces proving and verification keys for CS.
+ */
+template<typename ppT>
+r1cs_ppzksnark_keypair<ppT> r1cs_ppzksnark_generator(const r1cs_ppzksnark_constraint_system<ppT> &cs);
+
+
+template<typename ppT>
+using r1cs_ppzksnark_constraint_system = r1cs_constraint_system<libff::Fr<ppT> >;
+
+template<typename ppT>
+using r1cs_ppzksnark_primary_input = r1cs_primary_input<libff::Fr<ppT> >;
+
+template<typename ppT>
+using r1cs_ppzksnark_auxiliary_input = r1cs_auxiliary_input<libff::Fr<ppT> >;
+
+typedef std::vector<bool> bit_vector;
+```
+                 ||
+				 \/
+1)
+```
+	r1cs_ppzksnark_constraint_system<ppT> cs_copy(cs);
+    cs_copy.swap_AB_if_beneficial();
+                 ||
+				 \/
+template<typename FieldT>
+void r1cs_constraint_system<FieldT>::swap_AB_if_beneficial()
+{
+    libff::enter_block("Call to r1cs_constraint_system::swap_AB_if_beneficial");
+
+    libff::enter_block("Estimate densities");
+    libff::bit_vector touched_by_A(this->num_variables() + 1, false), touched_by_B(this->num_variables() + 1, false);
+
+    for (size_t i = 0; i < this->constraints.size(); ++i)
+    {
+        for (size_t j = 0; j < this->constraints[i].a.terms.size(); ++j)
+        {
+            touched_by_A[this->constraints[i].a.terms[j].index] = true;
+        }
+
+        for (size_t j = 0; j < this->constraints[i].b.terms.size(); ++j)
+        {
+            touched_by_B[this->constraints[i].b.terms[j].index] = true;
+        }
+    }
+
+    size_t non_zero_A_count = 0, non_zero_B_count = 0;
+    for (size_t i = 0; i < this->num_variables() + 1; ++i)
+    {
+        non_zero_A_count += touched_by_A[i] ? 1 : 0;
+        non_zero_B_count += touched_by_B[i] ? 1 : 0;
+    }
+
+    if (!libff::inhibit_profiling_info)
+    {
+        libff::print_indent(); printf("* Non-zero A-count (estimate): %zu\n", non_zero_A_count);
+        libff::print_indent(); printf("* Non-zero B-count (estimate): %zu\n", non_zero_B_count);
+    }
+    libff::leave_block("Estimate densities");
+
+    if (non_zero_B_count > non_zero_A_count)
+    {
+        libff::enter_block("Perform the swap");
+        for (size_t i = 0; i < this->constraints.size(); ++i)
+        {
+            std::swap(this->constraints[i].a, this->constraints[i].b);
+        }
+        libff::leave_block("Perform the swap");
+    }
+    else
+    {
+        libff::print_indent(); printf("Swap is not beneficial, not performing\n");
+    }
+
+    libff::leave_block("Call to r1cs_constraint_system::swap_AB_if_beneficial");
+}
+	
+```
+
+2）从Fp_model中任取一点
+```
+	/* draw random element at which the QAP is evaluated */
+    const  libff::Fr<ppT> t = libff::Fr<ppT>::random_element();
+```
+
+3）
+```
+	qap_instance_evaluation<libff::Fr<ppT> > qap_inst = r1cs_to_qap_instance_map_with_evaluation(cs_copy, t);
+                 ||
+				 \/	
+/**
+ * Instance map for the R1CS-to-QAP reduction followed by evaluation of the resulting QAP instance.
+ */
+template<typename FieldT>
+qap_instance_evaluation<FieldT> r1cs_to_qap_instance_map_with_evaluation(const r1cs_constraint_system<FieldT> &cs,
+                                                                         const FieldT &t);
+																		
+/**
+ * Instance map for the R1CS-to-QAP reduction followed by evaluation of the resulting QAP instance.
+ *
+ * Namely, given a R1CS constraint system cs and a field element t, construct
+ * a QAP instance (evaluated at t) for which:
+ *   At := (A_0(t),A_1(t),...,A_m(t))
+ *   Bt := (B_0(t),B_1(t),...,B_m(t))
+ *   Ct := (C_0(t),C_1(t),...,C_m(t))
+ *   Ht := (1,t,t^2,...,t^n)
+ *   Zt := Z(t) = "vanishing polynomial of a certain set S, evaluated at t"
+ * where
+ *   m = number of variables of the QAP
+ *   n = degree of the QAP
+ */
+template<typename FieldT>
+qap_instance_evaluation<FieldT> r1cs_to_qap_instance_map_with_evaluation(const r1cs_constraint_system<FieldT> &cs,
+                                                                         const FieldT &t)
+{
+    libff::enter_block("Call to r1cs_to_qap_instance_map_with_evaluation");
+
+    const std::shared_ptr<libfqfft::evaluation_domain<FieldT> > domain = libfqfft::get_evaluation_domain<FieldT>(cs.num_constraints() + cs.num_inputs() + 1);
+
+    std::vector<FieldT> At, Bt, Ct, Ht;
+
+    At.resize(cs.num_variables()+1, FieldT::zero());
+    Bt.resize(cs.num_variables()+1, FieldT::zero());
+    Ct.resize(cs.num_variables()+1, FieldT::zero());
+    Ht.reserve(domain->m+1);
+
+    const FieldT Zt = domain->compute_vanishing_polynomial(t);
+
+    libff::enter_block("Compute evaluations of A, B, C, H at t");
+    const std::vector<FieldT> u = domain->evaluate_all_lagrange_polynomials(t);
+    /**
+     * add and process the constraints
+     *     input_i * 0 = 0
+     * to ensure soundness of input consistency
+     */
+    for (size_t i = 0; i <= cs.num_inputs(); ++i)
+    {
+        At[i] = u[cs.num_constraints() + i];
+    }
+    /* process all other constraints */
+    for (size_t i = 0; i < cs.num_constraints(); ++i)
+    {
+        for (size_t j = 0; j < cs.constraints[i].a.terms.size(); ++j)
+        {
+            At[cs.constraints[i].a.terms[j].index] +=
+                u[i]*cs.constraints[i].a.terms[j].coeff;
+        }
+
+        for (size_t j = 0; j < cs.constraints[i].b.terms.size(); ++j)
+        {
+            Bt[cs.constraints[i].b.terms[j].index] +=
+                u[i]*cs.constraints[i].b.terms[j].coeff;
+        }
+
+        for (size_t j = 0; j < cs.constraints[i].c.terms.size(); ++j)
+        {
+            Ct[cs.constraints[i].c.terms[j].index] +=
+                u[i]*cs.constraints[i].c.terms[j].coeff;
+        }
+    }
+
+    FieldT ti = FieldT::one();
+    for (size_t i = 0; i < domain->m+1; ++i)
+    {
+        Ht.emplace_back(ti);
+        ti *= t;
+    }
+    libff::leave_block("Compute evaluations of A, B, C, H at t");
+
+    libff::leave_block("Call to r1cs_to_qap_instance_map_with_evaluation");
+
+    return qap_instance_evaluation<FieldT>(domain,
+                                           cs.num_variables(),
+                                           domain->m,
+                                           cs.num_inputs(),
+                                           t,
+                                           std::move(At),
+                                           std::move(Bt),
+                                           std::move(Ct),
+                                           std::move(Ht),
+                                           Zt);
+}
+																		
+template<typename EC_ppT>
+using Fr = typename EC_ppT::Fp_type;
+
+typedef bn128_Fr Fp_type;
+
+typedef Fp_model<bn128_r_limbs, bn128_modulus_r> bn128_Fr;
+
+/**
+ * A QAP instance evaluation is a QAP instance that is evaluated at a field element t.
+ *
+ * Specifically, the datastructure stores:
+ * - a choice of domain (corresponding to a certain subset of the field);
+ * - the number of variables, the degree, and the number of inputs;
+ * - a field element t;
+ * - evaluations of the A,B,C (and Z) polynomials at t;
+ * - evaluations of all monomials of t; //monomials单项
+ * - counts about how many of the above evaluations are in fact non-zero.
+ */
+template<typename FieldT>
+class qap_instance_evaluation {
+private:
+    size_t num_variables_;
+    size_t degree_;
+    size_t num_inputs_;
+public:
+    std::shared_ptr<libfqfft::evaluation_domain<FieldT> > domain;
+
+    FieldT t;
+
+    std::vector<FieldT> At, Bt, Ct, Ht;
+
+    FieldT Zt;
+
+    qap_instance_evaluation(const std::shared_ptr<libfqfft::evaluation_domain<FieldT> > &domain,
+                            const size_t num_variables,
+                            const size_t degree,
+                            const size_t num_inputs,
+                            const FieldT &t,
+                            const std::vector<FieldT> &At,
+                            const std::vector<FieldT> &Bt,
+                            const std::vector<FieldT> &Ct,
+                            const std::vector<FieldT> &Ht,
+                            const FieldT &Zt);
+    qap_instance_evaluation(const std::shared_ptr<libfqfft::evaluation_domain<FieldT> > &domain,
+                            const size_t num_variables,
+                            const size_t degree,
+                            const size_t num_inputs,
+                            const FieldT &t,
+                            std::vector<FieldT> &&At,
+                            std::vector<FieldT> &&Bt,
+                            std::vector<FieldT> &&Ct,
+                            std::vector<FieldT> &&Ht,
+                            const FieldT &Zt);
+
+    qap_instance_evaluation(const qap_instance_evaluation<FieldT> &other) = default;
+    qap_instance_evaluation(qap_instance_evaluation<FieldT> &&other) = default;
+    qap_instance_evaluation& operator=(const qap_instance_evaluation<FieldT> &other) = default;
+    qap_instance_evaluation& operator=(qap_instance_evaluation<FieldT> &&other) = default;
+
+    size_t num_variables() const;
+    size_t degree() const;
+    size_t num_inputs() const;
+
+    bool is_satisfied(const qap_witness<FieldT> &witness) const;
+};
+
+```
+
+```
+/**
+ * Compute the m Lagrange coefficients, relative to the set S={omega^{0},...,omega^{m-1}}, at the field element t.
+ */
+template<typename FieldT>
+std::vector<FieldT> _basic_radix2_evaluate_all_lagrange_polynomials(const size_t m, const FieldT &t);
+
+```
+
+
+
+
+

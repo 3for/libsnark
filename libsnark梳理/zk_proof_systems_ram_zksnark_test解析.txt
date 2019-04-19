@@ -1,0 +1,793 @@
+一、
+```
+ram_zksnark_PCD_pp<default_ram_zksnark_pp>::init_public_params();
+                       ||
+					   \/
+void default_r1cs_ppzkpcd_pp::init_public_params()
+{
+    curve_A_pp::init_public_params();
+    curve_B_pp::init_public_params();
+}
+                       ||
+					   \/
+init_mnt4_params();
+init_mnt6_params();
+					
+```
+对应的结构体解析为
+
+```
+typedef default_tinyram_zksnark_pp default_ram_zksnark_pp;
+
+class default_tinyram_zksnark_pp {
+public:
+    typedef default_r1cs_ppzkpcd_pp PCD_pp;
+    typedef typename PCD_pp::scalar_field_A FieldT; //FieldT 对应 mnt4_Fr
+    typedef ram_tinyram<FieldT> machine_pp;
+
+    static void init_public_params();
+};
+
+template<typename ram_zksnark_ppT>
+using ram_zksnark_PCD_pp = typename ram_zksnark_ppT::PCD_pp;
+
+class default_r1cs_ppzkpcd_pp {
+public:
+    typedef libff::mnt4_pp curve_A_pp;
+    typedef libff::mnt6_pp curve_B_pp;
+
+    typedef libff::Fr<curve_A_pp> scalar_field_A; //对应 mnt4_Fr
+    typedef libff::Fr<curve_B_pp> scalar_field_B; //对应 mnt6_Fr
+
+    static void init_public_params();
+};
+
+template<typename EC_ppT>
+using Fr = typename EC_ppT::Fp_type; //EC_ppT 对应 libff::mnt4_pp 等，Fr 对应 mnt4_Fr 等
+
+namespace libff {
+
+class mnt4_pp {
+public:
+    typedef mnt4_Fr Fp_type;
+    typedef mnt4_G1 G1_type;
+    typedef mnt4_G2 G2_type;
+    typedef mnt4_G1_precomp G1_precomp_type;
+    typedef mnt4_G2_precomp G2_precomp_type;
+    typedef mnt4_affine_ate_G1_precomputation affine_ate_G1_precomp_type;
+    typedef mnt4_affine_ate_G2_precomputation affine_ate_G2_precomp_type;
+    typedef mnt4_Fq Fq_type;
+    typedef mnt4_Fq2 Fqe_type;
+    typedef mnt4_Fq4 Fqk_type;
+    typedef mnt4_GT GT_type;
+
+    static const bool has_affine_pairing = true;
+
+    static void init_public_params();
+    static mnt4_GT final_exponentiation(const mnt4_Fq4 &elt);
+
+    static mnt4_G1_precomp precompute_G1(const mnt4_G1 &P);
+    static mnt4_G2_precomp precompute_G2(const mnt4_G2 &Q);
+
+    static mnt4_Fq4 miller_loop(const mnt4_G1_precomp &prec_P,
+                                const mnt4_G2_precomp &prec_Q);
+
+    static mnt4_affine_ate_G1_precomputation affine_ate_precompute_G1(const mnt4_G1 &P);
+    static mnt4_affine_ate_G2_precomputation affine_ate_precompute_G2(const mnt4_G2 &Q);
+    static mnt4_Fq4 affine_ate_miller_loop(const mnt4_affine_ate_G1_precomputation &prec_P,
+                                           const mnt4_affine_ate_G2_precomputation &prec_Q);
+
+    static mnt4_Fq4 affine_ate_e_over_e_miller_loop(const mnt4_affine_ate_G1_precomputation &prec_P1,
+                                                    const mnt4_affine_ate_G2_precomputation &prec_Q1,
+                                                    const mnt4_affine_ate_G1_precomputation &prec_P2,
+                                                    const mnt4_affine_ate_G2_precomputation &prec_Q2);
+    static mnt4_Fq4 affine_ate_e_times_e_over_e_miller_loop(const mnt4_affine_ate_G1_precomputation &prec_P1,
+                                                            const mnt4_affine_ate_G2_precomputation &prec_Q1,
+                                                            const mnt4_affine_ate_G1_precomputation &prec_P2,
+                                                            const mnt4_affine_ate_G2_precomputation &prec_Q2,
+                                                            const mnt4_affine_ate_G1_precomputation &prec_P3,
+                                                            const mnt4_affine_ate_G2_precomputation &prec_Q3);
+
+    static mnt4_Fq4 double_miller_loop(const mnt4_G1_precomp &prec_P1,
+                                       const mnt4_G2_precomp &prec_Q1,
+                                       const mnt4_G1_precomp &prec_P2,
+                                       const mnt4_G2_precomp &prec_Q2);
+
+    /* the following are used in test files */
+    static mnt4_Fq4 pairing(const mnt4_G1 &P,
+                            const mnt4_G2 &Q);
+    static mnt4_Fq4 reduced_pairing(const mnt4_G1 &P,
+                                    const mnt4_G2 &Q);
+    static mnt4_Fq4 affine_reduced_pairing(const mnt4_G1 &P,
+                                           const mnt4_G2 &Q);
+};
+
+} // libff
+
+namespace libff {
+
+class mnt6_pp {
+public:
+    typedef mnt6_Fr Fp_type;
+    typedef mnt6_G1 G1_type;
+    typedef mnt6_G2 G2_type;
+    typedef mnt6_affine_ate_G1_precomputation affine_ate_G1_precomp_type;
+    typedef mnt6_affine_ate_G2_precomputation affine_ate_G2_precomp_type;
+    typedef mnt6_G1_precomp G1_precomp_type;
+    typedef mnt6_G2_precomp G2_precomp_type;
+    typedef mnt6_Fq Fq_type;
+    typedef mnt6_Fq3 Fqe_type;
+    typedef mnt6_Fq6 Fqk_type;
+    typedef mnt6_GT GT_type;
+
+    static const bool has_affine_pairing = true;
+
+    static void init_public_params();
+    static mnt6_GT final_exponentiation(const mnt6_Fq6 &elt);
+    static mnt6_G1_precomp precompute_G1(const mnt6_G1 &P);
+    static mnt6_G2_precomp precompute_G2(const mnt6_G2 &Q);
+    static mnt6_Fq6 miller_loop(const mnt6_G1_precomp &prec_P,
+                                const mnt6_G2_precomp &prec_Q);
+    static mnt6_affine_ate_G1_precomputation affine_ate_precompute_G1(const mnt6_G1 &P);
+    static mnt6_affine_ate_G2_precomputation affine_ate_precompute_G2(const mnt6_G2 &Q);
+    static mnt6_Fq6 affine_ate_miller_loop(const mnt6_affine_ate_G1_precomputation &prec_P,
+                                           const mnt6_affine_ate_G2_precomputation &prec_Q);
+    static mnt6_Fq6 affine_ate_e_over_e_miller_loop(const mnt6_affine_ate_G1_precomputation &prec_P1,
+                                                    const mnt6_affine_ate_G2_precomputation &prec_Q1,
+                                                    const mnt6_affine_ate_G1_precomputation &prec_P2,
+                                                    const mnt6_affine_ate_G2_precomputation &prec_Q2);
+    static mnt6_Fq6 affine_ate_e_times_e_over_e_miller_loop(const mnt6_affine_ate_G1_precomputation &prec_P1,
+                                                            const mnt6_affine_ate_G2_precomputation &prec_Q1,
+                                                            const mnt6_affine_ate_G1_precomputation &prec_P2,
+                                                            const mnt6_affine_ate_G2_precomputation &prec_Q2,
+                                                            const mnt6_affine_ate_G1_precomputation &prec_P3,
+                                                            const mnt6_affine_ate_G2_precomputation &prec_Q3);
+    static mnt6_Fq6 double_miller_loop(const mnt6_G1_precomp &prec_P1,
+                                       const mnt6_G2_precomp &prec_Q1,
+                                       const mnt6_G1_precomp &prec_P2,
+                                       const mnt6_G2_precomp &prec_Q2);
+
+    /* the following are used in test files */
+    static mnt6_Fq6 pairing(const mnt6_G1 &P,
+                            const mnt6_G2 &Q);
+    static mnt6_Fq6 reduced_pairing(const mnt6_G1 &P,
+                                    const mnt6_G2 &Q);
+    static mnt6_Fq6 affine_reduced_pairing(const mnt6_G1 &P,
+                                           const mnt6_G2 &Q);
+};
+
+} // libff
+
+```
+
+
+二、
+```
+//ppT 为 default_ram_zksnark_pp
+typedef ram_zksnark_machine_pp<ppT> ramT; //ramT 即为 ram_tinyram
+const ram_architecture_params<ramT> ap(w, k); //ap 为class tinyram_architecture_params
+```
+对应的结构体解析为：
+```
+//对应上面调用情况： ram_zksnark_ppT 为 default_ram_zksnark_pp ，亦为 default_tinyram_zksnark_pp
+template<typename ram_zksnark_ppT>
+using ram_zksnark_machine_pp = typename ram_zksnark_ppT::machine_pp;
+                       ||
+					   \/
+default_tinyram_zksnark_pp 中有：
+typedef ram_tinyram<FieldT> machine_pp; //FieldT 对应 mnt4_Fr
+                       ||
+					   \/
+template<typename FieldT>
+class ram_tinyram {
+public:
+    static size_t timestamp_length;
+
+    typedef FieldT base_field_type;
+    typedef tinyram_protoboard<FieldT> protoboard_type;
+    typedef tinyram_gadget<FieldT> gadget_base_type;
+    typedef tinyram_cpu_checker<FieldT> cpu_checker_type;
+    typedef tinyram_architecture_params architecture_params_type;
+};
+
+template<typename FieldT>
+size_t ram_tinyram<FieldT>::timestamp_length = 300;
+
+template<typename ramT>
+using ram_architecture_params = typename ramT::architecture_params_type; //ramT 即为 ram_tinyram
+                       ||
+					   \/
+class tinyram_architecture_params {
+public:
+    reg_width_t w; /* width of a register */
+    reg_count_t k; /* number of registers */
+
+    tinyram_architecture_params() {};
+    tinyram_architecture_params(const reg_width_t w, const reg_count_t k) : w(w), k(k) { assert(w == 1ul << libff::log2(w)); };
+
+    size_t address_size() const; //w-(libff::log2(w)-2);
+    size_t value_size() const; //2*w;
+    size_t cpu_state_size() const; // k * w + 2; /* + flag + tape1_exhausted */
+    size_t initial_pc_addr() const; /* the initial PC address is memory units for the RAM reduction */
+
+    libff::bit_vector initial_cpu_state() const; //typedef std::vector<bool> bit_vector;默认所有cpu_state均初始化为false.
+    memory_contents initial_memory_contents(const tinyram_program &program,
+                                            const tinyram_input_tape &primary_input) const;
+
+    size_t opcode_width() const; //libff::log2(static_cast<size_t>(tinyram_opcode_ANSWER)); /* assumption: answer is the last */ //log2(32)=5 ?再确定下？？？
+    size_t reg_arg_width() const; //libff::log2(k);//log2(16)=4
+    size_t instruction_padding_width() const; //2 * w - (opcode_width() + 1 + 2 * reg_arg_width() + reg_arg_or_imm_width());
+    size_t reg_arg_or_imm_width() const; //std::max(w, reg_arg_width());//for w=32,k=16, it is w=32.
+
+    size_t dwaddr_len() const; // w-(libff::log2(w)-2);
+    size_t subaddr_len() const; // libff::log2(w)-2;
+
+    size_t bytes_in_word() const; // w/8;
+
+    size_t instr_size() const; // 2*w;
+
+    bool operator==(const tinyram_architecture_params &other) const;
+
+    friend std::ostream& operator<<(std::ostream &out, const tinyram_architecture_params &ap);
+    friend std::istream& operator>>(std::istream &in, tinyram_architecture_params &ap);
+
+    void print() const;
+};
+
+```
+
+
+三、
+```
+const size_t w = 32;
+const size_t k = 16;
+
+const size_t boot_trace_size_bound = 20;
+const size_t time_bound = 10;
+
+//ramT 即为 ram_tinyram
+const ram_example<ramT> example = gen_ram_example_complex<ramT>(ap, boot_trace_size_bound, time_bound, true);
+                       ||
+					   \/
+template<typename ramT>
+ram_example<ramT> gen_ram_example_complex(const ram_architecture_params<ramT> &ap, const size_t boot_trace_size_bound, const size_t time_bound, const bool satisfiable)
+{
+    libff::enter_block("Call to gen_ram_example_complex");
+
+    const size_t program_size = boot_trace_size_bound / 2; // 10
+    const size_t input_size = boot_trace_size_bound - program_size; // 10
+	
+    assert(2*ap.w/8*program_size < 1ul<<(ap.w-1));
+    assert(ap.w/8*input_size < 1ul<<(ap.w-1));
+
+    ram_example<ramT> result;
+
+    result.ap = ap;
+    result.boot_trace_size_bound = boot_trace_size_bound; // 20
+    result.time_bound = time_bound; // 10
+
+    tinyram_program prelude; prelude.instructions = generate_tinyram_prelude(ap);//生成序曲，代表tinyRAM程序的开头。
+
+    size_t boot_pos = 0;
+    for (size_t i = 0; i < prelude.instructions.size(); ++i)
+    {
+        result.boot_trace.set_trace_entry(boot_pos++, std::make_pair(i, prelude.instructions[i].as_dword(ap)));
+    }
+
+    const size_t prelude_len = prelude.instructions.size(); //8
+    const size_t instr_addr = (prelude_len+4)*(2*ap.w/8);
+    const size_t input_addr = (1ul<<(ap.w-1)) + (ap.w/8); // byte address of the first input word
+
+    result.boot_trace.set_trace_entry(boot_pos, std::make_pair(boot_pos, tinyram_instruction(tinyram_opcode_LOADB,  true,      1,       0, instr_addr).as_dword(ap)));
+    ++boot_pos;
+    result.boot_trace.set_trace_entry(boot_pos, std::make_pair(boot_pos, tinyram_instruction(tinyram_opcode_LOADW,  true,      2,       0, input_addr).as_dword(ap)));
+    ++boot_pos;
+    result.boot_trace.set_trace_entry(boot_pos, std::make_pair(boot_pos, tinyram_instruction(tinyram_opcode_SUB,    false,     1,       1, 2).as_dword(ap)));
+    ++boot_pos;
+    result.boot_trace.set_trace_entry(boot_pos, std::make_pair(boot_pos, tinyram_instruction(tinyram_opcode_STOREB, true,      1,       0, instr_addr).as_dword(ap)));
+    ++boot_pos;
+    result.boot_trace.set_trace_entry(boot_pos, std::make_pair(boot_pos, tinyram_instruction(tinyram_opcode_ANSWER, true,      0,       0, 1).as_dword(ap)));
+    ++boot_pos;
+
+    while (boot_pos < program_size)
+    {
+        result.boot_trace.set_trace_entry(boot_pos, std::make_pair(boot_pos, random_tinyram_instruction(ap).as_dword(ap))); //random_tinyram_instruction随机指令？？？
+        ++boot_pos;
+    }
+
+    result.boot_trace.set_trace_entry(boot_pos++, std::make_pair(1ul<<(ap.dwaddr_len()-1), satisfiable ? 1ul<<ap.w : 0));
+
+    for (size_t i = 1; i < input_size; ++i) //从1~9
+    {
+        result.boot_trace.set_trace_entry(boot_pos++, std::make_pair((1ul<<(ap.dwaddr_len()-1)) + i + 1, std::rand() % (1ul<<(2*ap.w)))); //rand()产生的是伪随机数字，每次执行时是相同的？？？如何理解，每个i都相同还是不同？
+    }
+
+    libff::leave_block("Call to gen_ram_example_complex");
+    return result;
+}
+	
+```
+对应的结构体解析为：
+```
+//ramT 即为 ram_tinyram
+template<typename ramT>
+struct ram_example {
+    ram_architecture_params<ramT> ap;
+    size_t boot_trace_size_bound;
+    size_t time_bound;
+    ram_boot_trace<ramT> boot_trace;
+    ram_input_tape<ramT> auxiliary_input;
+};
+//ramT 即为 ram_tinyram
+template<typename ramT>
+using ram_boot_trace = memory_store_trace;
+
+/**
+ * A pair consisting of an address and a value.
+ * It represents a memory store.
+ */
+typedef std::pair<size_t, size_t> address_and_value;
+
+/**
+ * A list in which each component consists of a timestamp and a memory store.
+ */
+class memory_store_trace {
+private:
+    std::map<size_t, address_and_value> entries;
+
+public:
+    memory_store_trace();
+    address_and_value get_trace_entry(const size_t timestamp) const;
+    std::map<size_t, address_and_value> get_all_trace_entries() const;
+    void set_trace_entry(const size_t timestamp, const address_and_value &av);
+
+    memory_contents as_memory_contents() const;
+};
+
+class tinyram_program {
+public:
+    std::vector<tinyram_instruction> instructions;
+    size_t size() const { return instructions.size(); }
+    void add_instruction(const tinyram_instruction &instr);
+};
+
+/* order everywhere is reversed (i.e. MSB comes first),
+   corresponding to the order in memory */
+class tinyram_instruction {
+public:
+    tinyram_opcode opcode; //为enum,目前共32个指令。
+    bool arg2_is_imm;
+    size_t desidx;
+    size_t arg1idx;
+    size_t arg2idx_or_imm;
+
+    tinyram_instruction(const tinyram_opcode &opcode,
+                        const bool arg2_is_imm,
+                        const size_t &desidx,
+                        const size_t &arg1idx,
+                        const size_t &arg2idx_or_imm);
+
+    size_t as_dword(const tinyram_architecture_params &ap) const;
+};
+
+size_t tinyram_instruction::as_dword(const tinyram_architecture_params &ap) const
+{
+    size_t result = static_cast<size_t>(opcode);
+    result = (result << 1) | (arg2_is_imm ? 1 : 0);
+    result = (result << libff::log2(ap.k)) | desidx;
+    result = (result << libff::log2(ap.k)) | arg1idx;
+    result = (result << (2*ap.w - ap.opcode_width() - 1 - 2 * libff::log2(ap.k))) | arg2idx_or_imm;
+
+    return result;
+}
+std::vector<tinyram_instruction> generate_tinyram_prelude(const tinyram_architecture_params &ap)
+{
+    std::vector<tinyram_instruction> result;
+    const size_t increment = libff::log2(ap.w)/8;
+    const size_t mem_start = 1ul<<(ap.w-1);
+    result.emplace_back(tinyram_instruction(tinyram_opcode_STOREW,  true, 0, 0, 0));         // 0: store.w 0, r0
+    result.emplace_back(tinyram_instruction(tinyram_opcode_MOV,     true, 0, 0, mem_start)); // 1: mov r0, 2^{W-1}
+    result.emplace_back(tinyram_instruction(tinyram_opcode_READ,    true, 1, 0, 0));         // 2: read r1, 0
+    result.emplace_back(tinyram_instruction(tinyram_opcode_CJMP,    true, 0, 0, 7));         // 3: cjmp 7
+    result.emplace_back(tinyram_instruction(tinyram_opcode_ADD,     true, 0, 0, increment)); // 4: add r0, r0, INCREMENT
+    result.emplace_back(tinyram_instruction(tinyram_opcode_STOREW, false, 1, 0, 0));         // 5: store.w r0, r1
+    result.emplace_back(tinyram_instruction(tinyram_opcode_JMP,     true, 0, 0, 2));         // 6: jmp 2
+    result.emplace_back(tinyram_instruction(tinyram_opcode_STOREW,  true, 0, 0, mem_start)); // 7: store.w 2^{W-1}, r0
+    return result;
+}
+tinyram_instruction random_tinyram_instruction(const tinyram_architecture_params &ap)
+{
+    const tinyram_opcode opcode = (tinyram_opcode)(std::rand() % (1ul<<ap.opcode_width()));
+    const bool arg2_is_imm = std::rand() & 1;
+    const size_t desidx = std::rand() % (1ul<<ap.reg_arg_width());
+    const size_t arg1idx = std::rand() % (1ul<<ap.reg_arg_width());
+    const size_t arg2idx_or_imm = std::rand() % (1ul<<ap.reg_arg_or_imm_width());
+    return tinyram_instruction(opcode, arg2_is_imm, desidx, arg1idx, arg2idx_or_imm);
+}
+```
+
+四、
+```
+//ppT 为 default_ram_zksnark_pp ，亦为 default_tinyram_zksnark_pp
+const bool test_serialization = true;
+const bool ans = run_ram_zksnark<ppT>(example, test_serialization);
+                       ||
+					   \/
+
+/**
+ * The code below provides an example of all stages of running a RAM zkSNARK.
+ *
+ * Of course, in a real-life scenario, we would have three distinct entities,
+ * mangled into one in the demonstration below. The three entities are as follows.
+ * (1) The "generator", which runs the zkSNARK generator on input a given
+ *     architecture.
+ * (2) The "prover", which runs the zkSNARK prover on input the proving key,
+ *     a boot trace, and an auxiliary input.
+ * (3) The "verifier", which runs the zkSNARK verifier on input the verification key,
+ *     a boot trace, a time bound, and a proof.
+ */
+template<typename ram_zksnark_ppT>
+bool run_ram_zksnark(const ram_example<ram_zksnark_machine_pp<ram_zksnark_ppT> > &example,
+                     const bool test_serialization)
+{
+    libff::enter_block("Call to run_ram_zksnark");
+
+    printf("This run uses an example with the following parameters:\n");
+    example.ap.print();
+    printf("* Time bound (T): %zu\n", example.time_bound);
+
+    libff::print_header("RAM zkSNARK Generator");
+    ram_zksnark_keypair<ram_zksnark_ppT> keypair = ram_zksnark_generator<ram_zksnark_ppT>(example.ap);
+    printf("\n"); libff::print_indent(); libff::print_mem("after generator");
+
+    if (test_serialization)
+    {
+        libff::enter_block("Test serialization of keys");
+        keypair.pk = libff::reserialize<ram_zksnark_proving_key<ram_zksnark_ppT> >(keypair.pk);
+        keypair.vk = libff::reserialize<ram_zksnark_verification_key<ram_zksnark_ppT> >(keypair.vk);
+        libff::leave_block("Test serialization of keys");
+    }
+
+    libff::print_header("RAM zkSNARK Prover");
+    ram_zksnark_proof<ram_zksnark_ppT> proof = ram_zksnark_prover<ram_zksnark_ppT>(keypair.pk, example.boot_trace, example.time_bound, example.auxiliary_input);
+    printf("\n"); libff::print_indent(); libff::print_mem("after prover");
+
+    if (test_serialization)
+    {
+        libff::enter_block("Test serialization of proof");
+        proof = libff::reserialize<ram_zksnark_proof<ram_zksnark_ppT> >(proof);
+        libff::leave_block("Test serialization of proof");
+    }
+
+    libff::print_header("RAM zkSNARK Verifier");
+    bool ans = ram_zksnark_verifier<ram_zksnark_ppT>(keypair.vk, example.boot_trace, example.time_bound, proof);
+    printf("\n"); libff::print_indent(); libff::print_mem("after verifier");
+    printf("* The verification result is: %s\n", (ans ? "PASS" : "FAIL"));
+
+    libff::leave_block("Call to run_ram_zksnark");
+
+    return ans;
+}
+```
+
+4.1 
+```
+// ram_zksnark_ppT 为 default_ram_zksnark_pp ，亦为 default_tinyram_zksnark_pp
+ram_zksnark_keypair<ram_zksnark_ppT> keypair = ram_zksnark_generator<ram_zksnark_ppT>(example.ap);
+                       ||
+					   \/
+template<typename ram_zksnark_ppT>
+ram_zksnark_keypair<ram_zksnark_ppT> ram_zksnark_generator(const ram_zksnark_architecture_params<ram_zksnark_ppT> &ap)
+{
+	// ram_zksnark_machine_pp<ram_zksnark_ppT> 为 ram_tinyram<FieldT> // FieldT 对应 mnt4_Fr
+	// ramT 即为 ram_tinyram
+    typedef ram_zksnark_machine_pp<ram_zksnark_ppT> ramT;
+    typedef ram_zksnark_PCD_pp<ram_zksnark_ppT> pcdT; // 即为 default_r1cs_ppzkpcd_pp
+    libff::enter_block("Call to ram_zksnark_generator");
+
+    libff::enter_block("Generate compliance predicate for RAM");
+    ram_compliance_predicate_handler<ramT> cp_handler(ap);
+    cp_handler.generate_r1cs_constraints();
+    r1cs_sp_ppzkpcd_compliance_predicate<pcdT> ram_compliance_predicate = cp_handler.get_compliance_predicate();
+    libff::leave_block("Generate compliance predicate for RAM");
+
+    libff::enter_block("Generate PCD key pair");
+    r1cs_sp_ppzkpcd_keypair<pcdT> kp = r1cs_sp_ppzkpcd_generator<pcdT>(ram_compliance_predicate);
+    libff::leave_block("Generate PCD key pair");
+
+    libff::leave_block("Call to ram_zksnark_generator");
+
+    ram_zksnark_proving_key<ram_zksnark_ppT> pk = ram_zksnark_proving_key<ram_zksnark_ppT>(ap, std::move(kp.pk));
+    ram_zksnark_verification_key<ram_zksnark_ppT> vk = ram_zksnark_verification_key<ram_zksnark_ppT>(ap, std::move(kp.vk));
+
+    return ram_zksnark_keypair<ram_zksnark_ppT>(std::move(pk), std::move(vk));
+}
+
+```
+
+对应的结构体解析为：
+```
+/**
+ * A RAM compliance predicate.
+ */
+template<typename ramT>
+class ram_compliance_predicate_handler : public compliance_predicate_handler<ram_base_field<ramT>, ram_protoboard<ramT> > {
+protected:
+
+    ram_architecture_params<ramT> ap; // ram_architecture_params 即为 tinyram_architecture_params
+
+public:
+
+    typedef ram_base_field<ramT> FieldT; //FieldT （ ram_base_field<ramT> ）对应 mnt4_Fr
+    typedef CRH_with_bit_out_gadget<FieldT> HashT;
+    typedef compliance_predicate_handler<ram_base_field<ramT>, ram_protoboard<ramT> > base_handler;
+
+    std::shared_ptr<ram_pcd_message_variable<ramT> > next;
+    std::shared_ptr<ram_pcd_message_variable<ramT> > cur;
+private:
+
+    pb_variable<FieldT> zero; // TODO: promote linear combinations to first class objects
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > copy_root_initial;
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > copy_pc_addr_initial;
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > copy_cpu_state_initial;
+
+    pb_variable<FieldT> is_base_case;
+    pb_variable<FieldT> is_not_halt_case;
+
+    pb_variable<FieldT> packed_cur_timestamp;
+    std::shared_ptr<packing_gadget<FieldT> > pack_cur_timestamp;
+    pb_variable<FieldT> packed_next_timestamp;
+    std::shared_ptr<packing_gadget<FieldT> > pack_next_timestamp;
+
+    pb_variable_array<FieldT> zero_cpu_state;
+    pb_variable_array<FieldT> zero_pc_addr;
+    pb_variable_array<FieldT> zero_root;
+
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > initialize_cur_cpu_state;
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > initialize_prev_pc_addr;
+
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > initialize_root;
+
+    pb_variable_array<FieldT> prev_pc_val;
+    std::shared_ptr<digest_variable<FieldT> > prev_pc_val_digest;
+    std::shared_ptr<digest_variable<FieldT> > cur_root_digest;
+    std::shared_ptr<merkle_authentication_path_variable<FieldT, HashT> > instruction_fetch_merkle_proof;
+    std::shared_ptr<memory_load_gadget<FieldT, HashT> > instruction_fetch;
+
+    std::shared_ptr<digest_variable<FieldT> > next_root_digest;
+
+    pb_variable_array<FieldT> ls_addr;
+    pb_variable_array<FieldT> ls_prev_val;
+    pb_variable_array<FieldT> ls_next_val;
+    std::shared_ptr<digest_variable<FieldT> > ls_prev_val_digest;
+    std::shared_ptr<digest_variable<FieldT> > ls_next_val_digest;
+    std::shared_ptr<merkle_authentication_path_variable<FieldT, HashT> > load_merkle_proof;
+    std::shared_ptr<merkle_authentication_path_variable<FieldT, HashT> > store_merkle_proof;
+    std::shared_ptr<memory_load_store_gadget<FieldT, HashT> > load_store_checker;
+
+    pb_variable_array<FieldT> temp_next_pc_addr;
+    pb_variable_array<FieldT> temp_next_cpu_state;
+    std::shared_ptr<ram_cpu_checker<ramT> > cpu_checker;
+
+    pb_variable<FieldT> do_halt;
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > clear_next_root;
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > clear_next_pc_addr;
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > clear_next_cpu_state;
+
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > copy_temp_next_root;
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > copy_temp_next_pc_addr;
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > copy_temp_next_cpu_state;
+
+public:
+    const size_t addr_size;
+    const size_t value_size;
+    const size_t digest_size;
+
+    size_t message_length;
+
+    ram_compliance_predicate_handler(const ram_architecture_params<ramT> &ap);
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness(const std::vector<std::shared_ptr<r1cs_pcd_message<FieldT> > > &incoming_message_values,
+                               const std::shared_ptr<r1cs_pcd_local_data<FieldT> > &local_data_value);
+
+    static std::shared_ptr<r1cs_pcd_message<FieldT> > get_base_case_message(const ram_architecture_params<ramT> &ap,
+                                                                            const ram_boot_trace<ramT> &primary_input);
+    static std::shared_ptr<r1cs_pcd_message<FieldT> > get_final_case_msg(const ram_architecture_params<ramT> &ap,
+                                                                         const ram_boot_trace<ramT> &primary_input,
+                                                                         const size_t time_bound);
+};
+
+template<typename ramT>
+using ram_base_field = typename ramT::base_field_type; //当 ramT 为 ram_tinyram 时，对应的 FieldT 对应 mnt4_Fr
+
+template<typename ramT>
+using ram_protoboard = typename ramT::protoboard_type; //当 ramT 为 ram_tinyram 时，对应为 tinyram_protoboard<FieldT> 
+
+template<typename FieldT>
+class tinyram_protoboard : public protoboard<FieldT> {
+public:
+    const tinyram_architecture_params ap;
+
+    tinyram_protoboard(const tinyram_architecture_params &ap);
+};
+template<typename FieldT>
+class protoboard {
+private:
+    FieldT constant_term; /* only here, because pb.val() needs to be able to return reference to the constant 1 term */
+    r1cs_variable_assignment<FieldT> values; /* values[0] will hold the value of the first allocated variable of the protoboard, *NOT* constant 1 */
+    var_index_t next_free_var;
+    lc_index_t next_free_lc;
+    std::vector<FieldT> lc_values;
+    r1cs_constraint_system<FieldT> constraint_system;
+
+public:
+    protoboard();
+
+    void clear_values();
+
+    FieldT& val(const pb_variable<FieldT> &var);
+    FieldT val(const pb_variable<FieldT> &var) const;
+
+    FieldT& lc_val(const pb_linear_combination<FieldT> &lc);
+    FieldT lc_val(const pb_linear_combination<FieldT> &lc) const;
+
+    void add_r1cs_constraint(const r1cs_constraint<FieldT> &constr, const std::string &annotation="");
+    void augment_variable_annotation(const pb_variable<FieldT> &v, const std::string &postfix);
+    bool is_satisfied() const;
+    void dump_variables() const;
+
+    size_t num_constraints() const;
+    size_t num_inputs() const;
+    size_t num_variables() const;
+
+    void set_input_sizes(const size_t primary_input_size);
+
+    r1cs_variable_assignment<FieldT> full_variable_assignment() const;
+    r1cs_primary_input<FieldT> primary_input() const;
+    r1cs_auxiliary_input<FieldT> auxiliary_input() const;
+    r1cs_constraint_system<FieldT> get_constraint_system() const;
+
+    friend class pb_variable<FieldT>;
+    friend class pb_linear_combination<FieldT>;
+
+private:
+    var_index_t allocate_var_index(const std::string &annotation="");
+    lc_index_t allocate_lc_index();
+};
+
+
+/*********************** Compliance predicate handler ************************/
+
+/**
+ * A base class for creating compliance predicates.
+ */
+template<typename FieldT, typename protoboardT> //调用时，对应的 FieldT 对应 mnt4_Fr ， protoboardT 对应 ram_protoboard<ramT> 对应为 tinyram_protoboard 。
+class compliance_predicate_handler {
+protected:
+    protoboardT pb; //protoboardT 对应 ram_protoboard<ramT> 对应为 tinyram_protoboard 。
+
+    std::shared_ptr<r1cs_pcd_message_variable<FieldT> > outgoing_message;
+    pb_variable<FieldT> arity;
+    std::vector<std::shared_ptr<r1cs_pcd_message_variable<FieldT> > > incoming_messages;
+    std::shared_ptr<r1cs_pcd_local_data_variable<FieldT> > local_data;
+public:
+    const size_t name;
+    const size_t type;
+    const size_t max_arity;
+    const bool relies_on_same_type_inputs;
+    const std::set<size_t> accepted_input_types;
+
+    compliance_predicate_handler(const protoboardT &pb,
+                                 const size_t name,
+                                 const size_t type,
+                                 const size_t max_arity,
+                                 const bool relies_on_same_type_inputs,
+                                 const std::set<size_t> accepted_input_types = std::set<size_t>());
+    virtual void generate_r1cs_constraints() = 0;
+    virtual void generate_r1cs_witness(const std::vector<std::shared_ptr<r1cs_pcd_message<FieldT> > > &incoming_message_values,
+                                       const std::shared_ptr<r1cs_pcd_local_data<FieldT> > &local_data_value);
+
+    r1cs_pcd_compliance_predicate<FieldT> get_compliance_predicate() const;
+    r1cs_variable_assignment<FieldT> get_full_variable_assignment() const;
+
+    std::shared_ptr<r1cs_pcd_message<FieldT> > get_outgoing_message() const;
+    size_t get_arity() const;
+    std::shared_ptr<r1cs_pcd_message<FieldT> > get_incoming_message(const size_t message_idx) const;
+    std::shared_ptr<r1cs_pcd_local_data<FieldT> > get_local_data() const;
+    r1cs_variable_assignment<FieldT> get_witness() const;
+};
+
+template<typename FieldT>
+class tinyram_protoboard : public protoboard<FieldT> {
+public:
+    const tinyram_architecture_params ap;
+
+    tinyram_protoboard(const tinyram_architecture_params &ap);
+};
+
+
+
+
+//仔细看此构造函数实现。。。？？？ ram_compliance_predicate_handler(const ram_architecture_params<ramT> &ap)
+                       ||
+					   \/
+
+
+
+/********************************** Key pair *********************************/
+/**
+ * A key pair for the RAM zkSNARK, which consists of a proving key and a verification key.
+ */
+template<typename ram_zksnark_ppT>
+struct ram_zksnark_keypair {
+public:
+    ram_zksnark_proving_key<ram_zksnark_ppT> pk;
+    ram_zksnark_verification_key<ram_zksnark_ppT> vk;
+
+    ram_zksnark_keypair() {};
+    ram_zksnark_keypair(ram_zksnark_keypair<ram_zksnark_ppT> &&other) = default;
+    ram_zksnark_keypair(ram_zksnark_proving_key<ram_zksnark_ppT> &&pk,
+                        ram_zksnark_verification_key<ram_zksnark_ppT> &&vk) :
+        pk(std::move(pk)),
+        vk(std::move(vk))
+    {};
+};
+/**
+ * A proving key for the RAM zkSNARK.
+ */
+template<typename ram_zksnark_ppT>
+class ram_zksnark_proving_key {
+public:
+    ram_zksnark_architecture_params<ram_zksnark_ppT> ap;
+    r1cs_sp_ppzkpcd_proving_key<ram_zksnark_PCD_pp<ram_zksnark_ppT> > pcd_pk;
+
+    ram_zksnark_proving_key() {}
+    ram_zksnark_proving_key(const ram_zksnark_proving_key<ram_zksnark_ppT> &other) = default;
+    ram_zksnark_proving_key(ram_zksnark_proving_key<ram_zksnark_ppT> &&other) = default;
+    ram_zksnark_proving_key(const ram_zksnark_architecture_params<ram_zksnark_ppT> &ap,
+                            r1cs_sp_ppzkpcd_proving_key<ram_zksnark_PCD_pp<ram_zksnark_ppT> > &&pcd_pk) :
+        ap(ap),
+        pcd_pk(std::move(pcd_pk))
+    {};
+
+    ram_zksnark_proving_key<ram_zksnark_ppT>& operator=(const ram_zksnark_proving_key<ram_zksnark_ppT> &other) = default;
+
+    bool operator==(const ram_zksnark_proving_key<ram_zksnark_ppT> &other) const;
+    friend std::ostream& operator<< <ram_zksnark_ppT>(std::ostream &out, const ram_zksnark_proving_key<ram_zksnark_ppT> &pk);
+    friend std::istream& operator>> <ram_zksnark_ppT>(std::istream &in, ram_zksnark_proving_key<ram_zksnark_ppT> &pk);
+};
+/**
+ * A verification key for the RAM zkSNARK.
+ */
+template<typename ram_zksnark_ppT>
+class ram_zksnark_verification_key {
+public:
+    ram_zksnark_architecture_params<ram_zksnark_ppT> ap;
+    r1cs_sp_ppzkpcd_verification_key<ram_zksnark_PCD_pp<ram_zksnark_ppT> > pcd_vk;
+
+    ram_zksnark_verification_key() = default;
+    ram_zksnark_verification_key(const ram_zksnark_verification_key<ram_zksnark_ppT> &other) = default;
+    ram_zksnark_verification_key(ram_zksnark_verification_key<ram_zksnark_ppT> &&other) = default;
+    ram_zksnark_verification_key(const ram_zksnark_architecture_params<ram_zksnark_ppT> &ap,
+                                 r1cs_sp_ppzkpcd_verification_key<ram_zksnark_PCD_pp<ram_zksnark_ppT> > &&pcd_vk) :
+        ap(ap),
+        pcd_vk(std::move(pcd_vk))
+    {};
+
+    ram_zksnark_verification_key<ram_zksnark_ppT>& operator=(const ram_zksnark_verification_key<ram_zksnark_ppT> &other) = default;
+
+    bool operator==(const ram_zksnark_verification_key<ram_zksnark_ppT> &other) const;
+    friend std::ostream& operator<< <ram_zksnark_ppT>(std::ostream &out, const ram_zksnark_verification_key<ram_zksnark_ppT> &vk);
+    friend std::istream& operator>> <ram_zksnark_ppT>(std::istream &in, ram_zksnark_verification_key<ram_zksnark_ppT> &vk);
+
+    static ram_zksnark_verification_key<ram_zksnark_ppT> dummy_verification_key(const ram_zksnark_architecture_params<ram_zksnark_ppT> &ap);
+};
+
+// ram_architecture_params 即为 tinyram_architecture_params
+// ram_zksnark_ppT 为 default_ram_zksnark_pp ，亦为 default_tinyram_zksnark_pp
+// ram_zksnark_machine_pp<ram_zksnark_ppT> 为 ram_tinyram<FieldT> // FieldT 对应 mnt4_Fr
+template<typename ram_zksnark_ppT>
+using ram_zksnark_architecture_params = ram_architecture_params<ram_zksnark_machine_pp<ram_zksnark_ppT> >; 
+
+
+```

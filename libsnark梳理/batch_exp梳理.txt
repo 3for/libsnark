@@ -1,0 +1,48 @@
+batch_exp梳理：
+
+```
+libff::enter_block("Compute the H-query", false);
+    libff::G1_vector<ppT> H_query = batch_exp(libff::Fr<ppT>::size_in_bits(), g1_window, g1_table, Ht);
+#ifdef USE_MIXED_ADDITION
+    libff::batch_to_special<libff::G1<ppT> >(H_query);
+#endif
+    libff::leave_block("Compute the H-query", false);
+```
+
+```
+std::vector<T> batch_exp(const size_t scalar_size,
+                         const size_t window,
+                         const window_table<T> &table,
+                         const std::vector<FieldT> &v)
+{
+    if (!inhibit_profiling_info)
+    {
+        print_indent();
+    }
+    std::vector<T> res(v.size(), table[0][0]);
+
+#ifdef MULTICORE
+#pragma omp parallel for
+#endif
+    for (size_t i = 0; i < v.size(); ++i)
+    {
+        res[i] = windowed_exp(scalar_size, window, table, v[i]);
+
+        if (!inhibit_profiling_info && (i % 10000 == 0))
+        {
+            printf(".");
+            fflush(stdout);
+        }
+    }
+
+    if (!inhibit_profiling_info)
+    {
+        printf(" DONE!\n");
+    }
+
+    return res;
+}
+
+```
+
+

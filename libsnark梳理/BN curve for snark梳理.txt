@@ -1,0 +1,143 @@
+在libsnark\depends\ate-pairing\include\bn.h中有：
+
+```
+struct CurveParam {
+	/*
+		y^2 = x^3 + b
+		u^2 = -1
+		xi = xi_a + xi_b u
+		v^3 = xi
+		w^2 = v
+	*/
+	int64_t z;
+	int b; // Y^2 + X^3 + b
+	int xi_a;
+	int xi_b; // xi = xi_a + xi_b u
+	bool operator==(const CurveParam& rhs) const { return z == rhs.z && b == rhs.b && xi_a == rhs.xi_a && xi_b == rhs.xi_b; }
+	bool operator!=(const CurveParam& rhs) const { return !operator==(rhs); }
+};
+
+/*
+	the current version supports only the following parameters
+*/
+#ifdef BN_SUPPORT_SNARK
+const CurveParam CurveSNARK1 = { 4965661367192848881, 3, 9, 1 };
+
+// b/xi = 82 / (9 + u) = 9 - u
+const CurveParam CurveSNARK2 = { 4965661367192848881, 82, 9, 1 };
+#else
+// b/xi = 2 / (1 - u) = 1 + u
+const CurveParam CurveFp254BNb = { -((1LL << 62) + (1LL << 55) + (1LL << 0)), 2, 1, 1 };
+#endif
+
+static inline void init(const CurveParam& cp, int mode = -1, bool useMulx = true)
+	{
+#ifdef BN_SUPPORT_SNARK
+		bool supported = cp == CurveSNARK1 || cp == CurveSNARK2;
+#else
+		bool supported = cp == CurveFp254BNb;
+#endif
+		if (!supported) {
+			fprintf(stderr, "not supported parameter\n");
+			exit(1);
+		}
+		mie::zmInit();
+		const int64_t org_z = cp.z; // NOTE: hard-coded Fp12::pow_neg_t too.
+		const int pCoff[] = { 1, 6, 24, 36, 36 };
+		const int rCoff[] = { 1, 6, 18, 36, 36 };
+		const int tCoff[] = { 1, 0,  6,  0,  0 };
+		z.set(org_z);
+		eval(p, z, pCoff);
+		eval(r, z, rCoff);
+		eval(t, z, tCoff);
+		largest_c = 6 * z + 2;
+		b = cp.b; // set b before calling Fp::setModulo
+		Fp::setModulo(p, mode, useMulx);
+		half = Fp(1) / Fp(2);
+		/*
+			b_invxi = b / xi
+		*/
+		Fp2 xi(cp.xi_a, cp.xi_b);
+		b_invxi = xi;
+		b_invxi.inverse();
+		b_invxi *= Fp2(b, 0);
+		gammar[0] = mie::power(xi, (p - 1) / 6);
+
+		for (size_t i = 1; i < sizeof(gammar) / sizeof(*gammar); ++i) {
+			gammar[i] = gammar[i - 1] * gammar[0];
+		}
+
+		for (size_t i = 0; i < sizeof(gammar2) / sizeof(*gammar2); ++i) {
+			gammar2[i] = Fp2(gammar[i].a_, -gammar[i].b_) * gammar[i];
+		}
+
+		for (size_t i = 0; i < sizeof(gammar2) / sizeof(*gammar2); ++i) {
+			gammar3[i] = gammar[i] * gammar2[i];
+		}
+
+		W2p = mie::power(xi, (p - 1) / 3);
+		W3p = mie::power(xi, (p - 1) / 2);
+		Fp2 temp = mie::power(xi, (p * p - 1) / 6);
+		assert(temp.b_.isZero());
+		Fp::square(Z, -temp.a_);
+		i0 = 0;
+		i1 = 1;
+
+		useNAF = util::getGoodRepl(siTbl, largest_c.abs());
+#ifdef BN_SUPPORT_SNARK
+		util::getGoodRepl(zReplTbl, z.abs());
+#endif
+	}
+	static inline void init(int mode = -1, bool useMulx = true) //bn128_init.cpp中调用 bn::Param::init(); // init ate-pairing library
+	{
+#ifdef BN_SUPPORT_SNARK
+		init(CurveSNARK1, mode, useMulx);
+#else
+		init(CurveFp254BNb, mode, useMulx);
+#endif
+	}
+	
+	void mie::zmInit()
+{
+#ifdef MIE_USE_X64ASM //win64或X86_64均会定义。
+	static bool isInit = false;
+	if (isInit) return;
+	isInit = true;
+	try {
+		static Code code; //调用class Code : public Xbyak::CodeGenerator {}中的Code()构造函数。
+	} catch (std::exception& e) {
+		fprintf(stderr, "zmInit ERR:%s\n", e.what());
+		exit(1);
+	}
+#endif
+}
+
+
+
+
+```
+
+
+```
+CMakeLists.txt中有：
+if(${CURVE} STREQUAL "BN128")
+  add_definitions(
+    -DBN_SUPPORT_SNARK=1
+  )
+endif()
+
+
+libsnark\depends\ate-pairing\include\zm.h中有：
+#define MIE_USE_X64ASM
+#if defined(_WIN64) || defined(__x86_64__)
+	typedef uint64_t Unit;
+	#define MIE_USE_UNIT64
+#else
+	typedef uint32_t Unit;
+	#define MIE_USE_UNIT32
+	#undef MIE_USE_X64ASM
+#endif
+
+```
+
+

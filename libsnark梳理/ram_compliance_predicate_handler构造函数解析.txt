@@ -1,0 +1,1086 @@
+？？？细跟下FMT的具体实现。。。va_start等等。
+
+//仔细看此构造函数实现。。。？？？ ram_compliance_predicate_handler(const ram_architecture_params<ramT> &ap)
+                       ||
+					   \/
+					   
+```
+1.1
+template<typename ramT> //调用时，当 ramT 为 ram_tinyram 时，对应的 FieldT （ ram_base_field<ramT> ）对应 mnt4_Fr ， protoboardT （ ram_protoboard<ramT> ） 对应为 tinyram_protoboard  。
+ram_compliance_predicate_handler<ramT>::ram_compliance_predicate_handler(const ram_architecture_params<ramT> &ap) : // ram_architecture_params 即为 tinyram_architecture_params
+    compliance_predicate_handler<ram_base_field<ramT>, ram_protoboard<ramT> >(ram_protoboard<ramT>(ap), 
+                                                                              100, //name
+                                                                              1, //type
+                                                                              1, //max_arity
+                                                                              true, //relies_on_same_type_inputs
+                                                                              std::set<size_t>{1}), //std::set<size_t> accepted_input_types //c++中的std::set，是基于红黑树的平衡二叉树的数据结构实现的一种容器，因为其中所包含的元素的值是唯一的，因此主要用于去重和排序。
+    ap(ap), // ram_architecture_params 即为 tinyram_architecture_params
+    addr_size(ap.address_size()),  //w-(libff::log2(w)-2); =29
+    value_size(ap.value_size()), //2*w;
+    digest_size(CRH_with_bit_out_gadget<FieldT>::get_digest_len()) //1*298
+{
+
+ /* To allow for optimizations, the compliance predicate also
+ * specififies a flag, called relies_on_same_type_inputs, denoting
+ * whether the predicate works under the assumption that all input
+ * messages have the same type. In such case a member
+ * accepted_input_types lists all types accepted by the predicate
+ * (accepted_input_types has no meaning if
+ * relies_on_same_type_inputs=false).
+ */
+ 
+1.2
+    // TODO: assert that message has fields of lengths consistent with num_addresses/value_size (as a method for ram_message)
+    // choose a constant for timestamp_len
+    // check that value_size <= digest_size; digest_size is not assumed to fit in chunk size (more precisely, it is handled correctly in the other gadgets).
+    // check if others fit (timestamp_length, value_size, addr_size)
+
+    // the variables allocated are: next, cur, local data (nil for us), is_base_case, witness
+	// protoboardT pb;即 this->pb 即为 tinyram_protoboard （: public protoboard<FieldT>） 。 ap  即为 tinyram_architecture_params
+	// pb is the protected variant of the parent class(public inherited)
+	// outgoing_message 为父类型 compliance_predicate_handler 的protected成员变量。std::shared_ptr<r1cs_pcd_message_variable<FieldT> > outgoing_message;
+	//创建变量名outgoing_message packed_payload_0~packed_payload_6， next_free_var 在 r1cs_pcd_message_variable 构造函数调用完成后值为2，每次allocate next_free_var++，之后 next_free_var=9
+	this->outgoing_message.reset(new ram_pcd_message_variable<ramT>(this->pb, ap, "outgoing_message")); //std::shared_ptr.reset: 放弃内部对象的所有权或拥有对象的变更, 会引起原有对象的引用计数的减少
+	                       ||
+					       \/
+//ram_pcd_message_variable 构造函数为：
+template<typename ramT>
+ram_pcd_message_variable<ramT>::ram_pcd_message_variable(protoboard<FieldT> &pb,
+                                                         const ram_architecture_params<ramT> &ap,
+                                                         const std::string &annotation_prefix) :
+    r1cs_pcd_message_variable<ram_base_field<ramT> >(pb, annotation_prefix), ap(ap)
+{
+	//for w=32,k=16. 1983=300+2*298+2*29+2*(16*32+2)+1
+    const size_t unpacked_payload_size_in_bits = ram_pcd_message<ramT>::unpacked_payload_size_in_bits(ap);  //1983
+	//capacity()为num_bits - 1=297，unpacked_payload_size_in_bits=1983，div_ceil为(x + (y-1)) / y = (1983+(297-1))/297= 7
+    const size_t packed_payload_size = libff::div_ceil(unpacked_payload_size_in_bits, FieldT::capacity());  //7
+	// pb_variable_array<FieldT> packed_payload;
+    packed_payload.allocate(pb, packed_payload_size, FMT(annotation_prefix, " packed_payload")); 
+
+    this->update_all_vars(); //调用parent class r1cs_pcd_message_variable 的 update_all_vars() 函数。将pb_variable<FieldT>2~8,共7个变量 存入all_vars中。
+}
+//r1cs_pcd_message_variable 构造函数为：
+template<typename FieldT>
+r1cs_pcd_message_variable<FieldT>::r1cs_pcd_message_variable(protoboard<FieldT> &pb,
+                                                             const std::string &annotation_prefix) :
+    gadget<FieldT>(pb, annotation_prefix) // protoboard()构造函数中初始化了 next_free_var = 1; /* to account for constant 1 term */
+{
+    type.allocate(pb, FMT(annotation_prefix, " type")); //创建变量名 type 。 pb_variable<FieldT> type; =>pb_variable.allocate()中有 next_free_var++ ，此时next_free_var=2
+	//pb_variable_array<FieldT> all_vars; typedef std::vector<pb_variable<FieldT> > contents;将type pb_variable 存入new创建的 ram_pcd_message_variable 变量的all_vars中。
+    all_vars.emplace_back(type); 
+
+    num_vars_at_construction = pb.num_variables(); //num_vars_at_construction=pb.num_variables()=next_free_var - 1=1
+}
+//gadget 构造函数为：
+template<typename FieldT>
+gadget<FieldT>::gadget(protoboard<FieldT> &pb, const std::string &annotation_prefix) :
+    pb(pb), annotation_prefix(annotation_prefix) // protoboard()构造函数中初始化了 next_free_var = 1; /* to account for constant 1 term */
+{
+#ifdef DEBUG
+    assert(annotation_prefix != "");
+#endif
+}
+//protoboard 构造函数为：
+template<typename FieldT>
+protoboard<FieldT>::protoboard()
+{
+    constant_term = FieldT::one();
+
+#ifdef DEBUG
+    constraint_system.variable_annotations[0] = "ONE";
+#endif
+
+    next_free_var = 1; /* to account for constant 1 term */
+    next_free_lc = 0;
+}
+	
+1.3	
+    //arity 为父类型 compliance_predicate_handler 的protected成员变量。pb_variable<FieldT> arity;
+    this->arity.allocate(this->pb, "arity"); //分配arity变量，此时 next_free_var=10
+	
+1.4
+    //incoming_messages 为父类型 compliance_predicate_handler 的protected成员变量。compliance_predicate_handler构造函数中 incoming_messages.resize(max_arity); // std::vector<std::shared_ptr<r1cs_pcd_message_variable<FieldT> > > incoming_messages; max_arity 初始化为1
+	////针对incomming_message，重置初始化next_free_var=1.创建变量名 incoming_message packed_payload_0~packed_payload_6，并将其 存入new创建的 ram_pcd_message_variable 变量的all_vars中。
+    this->incoming_messages[0].reset(new ram_pcd_message_variable<ramT>(this->pb, ap, "incoming_message")); 
+1.5 
+	// local_data 为父类型 compliance_predicate_handler 的protected成员变量。std::shared_ptr<r1cs_pcd_local_data_variable<FieldT> > local_data;
+	// 记录的为数据变量。
+    this->local_data.reset(new ram_pcd_local_data_variable<ramT>(this->pb, "local_data"));
+	                       ||
+					       \/
+//ram_pcd_local_data_variable 构造函数为：
+template<typename ramT>
+ram_pcd_local_data_variable<ramT>::ram_pcd_local_data_variable(protoboard<FieldT> &pb,
+                                                               const std::string &annotation_prefix) :
+    r1cs_pcd_local_data_variable<ram_base_field<ramT> >(pb, annotation_prefix)
+{
+    is_halt_case.allocate(pb, FMT(annotation_prefix, " is_halt_case")); //分配了 local_data is_halt_case 变量，next_free_var=2 //pb_variable<FieldT> is_halt_case;
+
+    this->update_all_vars(); //将pb_variable<FieldT>1,共1个变量 存入all_vars中。
+}
+//r1cs_pcd_local_data_variable 构造函数为：
+template<typename FieldT>
+r1cs_pcd_local_data_variable<FieldT>::r1cs_pcd_local_data_variable(protoboard<FieldT> &pb,
+                                                                   const std::string &annotation_prefix) :
+    gadget<FieldT>(pb, annotation_prefix)
+{
+    num_vars_at_construction = pb.num_variables(); //0？？？
+}
+template<typename FieldT>
+void r1cs_pcd_local_data_variable<FieldT>::update_all_vars()
+{
+    /* (the same NOTE as for r1cs_message_variable applies) */
+	//num_vars_at_construction为0？？，pb.num_variables()为1？
+    for (size_t var_idx = num_vars_at_construction + 1; var_idx <= this->pb.num_variables(); ++var_idx)
+    {
+        all_vars.emplace_back(pb_variable<FieldT>(var_idx));
+    }
+}
+	
+1.6 
+	//pb_variable<FieldT> is_base_case; 私有变量
+	is_base_case.allocate(this->pb, "is_base_case"); //创建变量名is_base_case，沿用this->pb的next_free_var值++ ？？？
+	
+1.7
+	/*
+	* std::shared_ptr<ram_pcd_message_variable<ramT> > next; //子类型
+    * std::shared_ptr<ram_pcd_message_variable<ramT> > cur;
+	* std::shared_ptr<r1cs_pcd_message_variable<FieldT> > outgoing_message; //父类型
+    * std::vector<std::shared_ptr<r1cs_pcd_message_variable<FieldT> > > incoming_messages;
+	* dynamic_pointer_cast为强制类型转换。父类型强制转换为子类型。
+	*/
+	next = std::dynamic_pointer_cast<ram_pcd_message_variable<ramT> >(this->outgoing_message);
+    cur = std::dynamic_pointer_cast<ram_pcd_message_variable<ramT> >(this->incoming_messages[0]);
+	
+	next->allocate_unpacked_part();
+    cur->allocate_unpacked_part();
+	                       ||
+					       \/
+//allocate_unpacked_part() 函数细节为：
+template<typename ramT>
+void ram_pcd_message_variable<ramT>::allocate_unpacked_part()
+{
+    const size_t digest_size = CRH_with_bit_out_gadget<FieldT>::get_digest_len(); //1*298
+
+	//pb_variable_array<FieldT> timestamp;//a timestamp t, denoting how many computation steps have occurre
+    timestamp.allocate(this->pb, ramT::timestamp_length, FMT(this->annotation_prefix, " timestamp"));//timestamp_length = 300，创建变量名timestamp_0~timestamp_299.
+	//pb_variable_array<FieldT> root_initial; //a root ρ of a Merkle tree of random-access memory (after t computation steps);
+    root_initial.allocate(this->pb, digest_size, FMT(this->annotation_prefix, " root_initial"));//digest_size = 298，创建变量名root_initial_0~root_initial_297
+	//pb_variable_array<FieldT> root; ////a root ρ of a Merkle tree of random-access memory (after t computation steps);
+    root.allocate(this->pb, digest_size, FMT(this->annotation_prefix, " root"));//digest_size = 298，创建变量名root_0~root_297
+	//address of the instruction
+    pc_addr.allocate(this->pb, ap.address_size(), FMT(this->annotation_prefix, " pc_addr")); ////w-(libff::log2(w)-2)=29,创建变量名pc_addr_0~pc_addr_28
+	//a CPU state scpu (after t computation steps);
+    cpu_state.allocate(this->pb, ap.cpu_state_size(), FMT(this->annotation_prefix, " cpu_state")); //// k * w + 2=16*32+2=514，创建变量名cpu_state_0~cpu_state_513
+    pc_addr_initial.allocate(this->pb, ap.address_size(), FMT(this->annotation_prefix, " pc_addr_initial")); //创建变量名pc_addr_initial_0~pc_addr_initial_28
+    cpu_state_initial.allocate(this->pb, ap.cpu_state_size(), FMT(this->annotation_prefix, " cpu_state_initial")); //创建变量名cpu_state_initial_0~cpu_state_initial_513
+	//a flag facc denoting whether the machine has accepted (after t computation steps)
+    has_accepted.allocate(this->pb, FMT(this->annotation_prefix, " has_accepted")); //pb_variable<FieldT> has_accepted;,创建has_accepted变量名
+
+	//pb_variable_array<FieldT> all_unpacked_vars;将所有的变量名依次存入相应all_unpacked_vars的contents中。 typedef std::vector<pb_variable<FieldT> > contents;
+    all_unpacked_vars.insert(all_unpacked_vars.end(), timestamp.begin(), timestamp.end());
+    all_unpacked_vars.insert(all_unpacked_vars.end(), root_initial.begin(), root_initial.end());
+    all_unpacked_vars.insert(all_unpacked_vars.end(), root.begin(), root.end());
+    all_unpacked_vars.insert(all_unpacked_vars.end(), pc_addr.begin(), pc_addr.end());
+    all_unpacked_vars.insert(all_unpacked_vars.end(), cpu_state.begin(), cpu_state.end());
+    all_unpacked_vars.insert(all_unpacked_vars.end(), pc_addr_initial.begin(), pc_addr_initial.end());
+    all_unpacked_vars.insert(all_unpacked_vars.end(), cpu_state_initial.begin(), cpu_state_initial.end());
+    all_unpacked_vars.insert(all_unpacked_vars.end(), has_accepted);
+
+	//std::shared_ptr<multipacking_gadget<FieldT> > unpack_payload; FieldT::capacity()=297.
+    unpack_payload.reset(new multipacking_gadget<FieldT>(this->pb, all_unpacked_vars, packed_payload, FieldT::capacity(), FMT(this->annotation_prefix, " unpack_payload")));
+}
+//multipacking_gadget构造函数为：
+template<typename FieldT>
+multipacking_gadget<FieldT>::multipacking_gadget(protoboard<FieldT> &pb,
+                                                 const pb_linear_combination_array<FieldT> &bits, //all_unpacked_vars
+                                                 const pb_linear_combination_array<FieldT> &packed_vars, //packed_payload
+                                                 const size_t chunk_size, //297
+                                                 const std::string &annotation_prefix) :
+    gadget<FieldT>(pb, annotation_prefix), bits(bits), packed_vars(packed_vars),
+    chunk_size(chunk_size),
+    num_chunks(libff::div_ceil(bits.size(), chunk_size)) //all_unpacked_vars.size()为1983？ (1983+(297-1))/297=7 ？？
+    // last_chunk_size(bits.size() - (num_chunks-1) * chunk_size)
+{
+    assert(packed_vars.size() == num_chunks); //packed_vars.size()=7
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        packers.emplace_back(packing_gadget<FieldT>(this->pb, pb_linear_combination_array<FieldT>(bits.begin() + i * chunk_size,
+                                                                                                  bits.begin() + std::min((i+1) * chunk_size, bits.size())),
+                                                    packed_vars[i], FMT(this->annotation_prefix, " packers_%zu", i))); //具体含义是？？？？邹玉娣。。。
+    }
+}
+
+1.8
+	 // work-around for bad linear combination handling. pb_variable<FieldT> zero; // TODO: promote linear combinations to first class objects
+    zero.allocate(this->pb, "zero"); // will go away when we properly support linear terms。分配zero变量名。
+	
+	temp_next_pc_addr.allocate(this->pb, addr_size, "temp_next_pc_addr");//29个变量名，临时pc_addr变量名
+    temp_next_cpu_state.allocate(this->pb, ap.cpu_state_size(), "temp_next_cpu_state"); //514个变量名。临时cpu_state变量名。
+	
+	const size_t chunk_size = FieldT::capacity();//297
+	
+	/*
+      Always:
+      next.root_initial = cur.root_initial
+      next.pc_addr_init = cur.pc_addr_initial
+      next.cpu_state_initial = cur.cpu_state_initial
+	  
+	  std::shared_ptr<bit_vector_copy_gadget<FieldT> > copy_root_initial;
+	  std::shared_ptr<bit_vector_copy_gadget<FieldT> > copy_pc_addr_initial;
+      std::shared_ptr<bit_vector_copy_gadget<FieldT> > copy_cpu_state_initial;
+    */
+    copy_root_initial.reset(new bit_vector_copy_gadget<FieldT>(this->pb, cur->root_initial, next->root_initial, ONE, chunk_size, "copy_root_initial"));
+    copy_pc_addr_initial.reset(new bit_vector_copy_gadget<FieldT>(this->pb, cur->pc_addr_initial, next->pc_addr_initial, ONE, chunk_size, "copy_pc_addr_initial"));
+    copy_cpu_state_initial.reset(new bit_vector_copy_gadget<FieldT>(this->pb, cur->cpu_state_initial, next->cpu_state_initial, ONE, chunk_size, "copy_cpu_state_initial"));
+                           ||
+					       \/
+//bit_vector_copy_gadget() 构造函数为：
+template<typename FieldT>
+bit_vector_copy_gadget<FieldT>::bit_vector_copy_gadget(protoboard<FieldT> &pb,
+                                                       const pb_variable_array<FieldT> &source_bits,
+                                                       const pb_variable_array<FieldT> &target_bits,
+                                                       const pb_linear_combination<FieldT> &do_copy, //ONE./* index 0 corresponds to the constant term (used in legacy code) */#define ONE pb_variable<FieldT>(0)
+                                                       const size_t chunk_size, //297
+                                                       const std::string &annotation_prefix) :
+    gadget<FieldT>(pb, annotation_prefix), source_bits(source_bits), target_bits(target_bits), do_copy(do_copy),
+    chunk_size(chunk_size), num_chunks(libff::div_ceil(source_bits.size(), chunk_size))
+{
+    assert(source_bits.size() == target_bits.size());
+
+    packed_source.allocate(pb, num_chunks, FMT(annotation_prefix, " packed_source"));
+    pack_source.reset(new multipacking_gadget<FieldT>(pb, source_bits, packed_source, chunk_size, FMT(annotation_prefix, " pack_source")));
+
+    packed_target.allocate(pb, num_chunks, FMT(annotation_prefix, " packed_target"));
+    pack_target.reset(new multipacking_gadget<FieldT>(pb, target_bits, packed_target, chunk_size, FMT(annotation_prefix, " pack_target")));
+
+    copier.reset(new field_vector_copy_gadget<FieldT>(pb, packed_source, packed_target, do_copy, FMT(annotation_prefix, " copier")));
+}
+//field_vector_copy_gadget 构造函数为：
+template<typename FieldT>
+field_vector_copy_gadget<FieldT>::field_vector_copy_gadget(protoboard<FieldT> &pb,
+                                                           const pb_variable_array<FieldT> &source,
+                                                           const pb_variable_array<FieldT> &target,
+                                                           const pb_linear_combination<FieldT> &do_copy,
+                                                           const std::string &annotation_prefix) :
+gadget<FieldT>(pb, annotation_prefix), source(source), target(target), do_copy(do_copy)
+{
+    assert(source.size() == target.size());
+}
+
+
+1.9
+	/*
+      If is_base_case = 1: (base case)
+      that cur.timestamp = 0, cur.cpu_state = 0, cur.pc_addr = 0, cur.has_accepted = 0
+      that cur.root = cur.root_initial
+    */
+    packed_cur_timestamp.allocate(this->pb, "packed_cur_timestamp");
+    pack_cur_timestamp.reset(new packing_gadget<FieldT>(this->pb, cur->timestamp, packed_cur_timestamp, "pack_cur_timestamp"));
+
+    zero_cpu_state = pb_variable_array<FieldT>(cur->cpu_state.size(), zero);
+    zero_pc_addr = pb_variable_array<FieldT>(cur->pc_addr.size(), zero);
+
+    initialize_cur_cpu_state.reset(new bit_vector_copy_gadget<FieldT>(this->pb, cur->cpu_state_initial, cur->cpu_state, is_base_case, chunk_size, "initialize_cur_cpu_state"));
+    initialize_prev_pc_addr.reset(new bit_vector_copy_gadget<FieldT>(this->pb, cur->pc_addr_initial, cur->pc_addr, is_base_case, chunk_size, "initialize_prev_pc_addr"));
+
+    initialize_root.reset(new bit_vector_copy_gadget<FieldT>(this->pb, cur->root_initial, cur->root, is_base_case, chunk_size, "initialize_root"));
+    /*
+      If do_halt = 0: (regular case) // computation does not halt.
+      that instruction fetch was correctly executed
+      next.timestamp = cur.timestamp + 1
+      that CPU accepted on (cur, next)
+      that load-then-store was correctly handled
+    */
+    is_not_halt_case.allocate(this->pb, "is_not_halt_case");
+    // for performing instruction fetch
+    prev_pc_val.allocate(this->pb, value_size, "prev_pc_val");//value_size值为2*w=64，创建变量名prev_pc_val_0~prev_pc_val_63
+    prev_pc_val_digest.reset(new digest_variable<FieldT>(this->pb, digest_size, prev_pc_val, zero, "prev_pc_val_digest"));//digest_size为1*298。用zero做了补齐
+    cur_root_digest.reset(new digest_variable<FieldT>(this->pb, digest_size, cur->root, zero, "cur_root_digest")); 
+	//addr_size为//w-(libff::log2(w)-2); =29
+	//typedef CRH_with_bit_out_gadget<FieldT> HashT;
+    instruction_fetch_merkle_proof.reset(new merkle_authentication_path_variable<FieldT, HashT>(this->pb, addr_size, "instruction_fetch_merkle_proof"));
+	/*
+	template<typename FieldT, typename HashT>
+	using memory_load_gadget = merkle_tree_check_read_gadget<FieldT, HashT>;
+
+	*/
+    instruction_fetch.reset(new memory_load_gadget<FieldT, HashT>(this->pb, addr_size,
+                                                                  cur->pc_addr,
+                                                                  *prev_pc_val_digest,
+                                                                  *cur_root_digest,
+                                                                  *instruction_fetch_merkle_proof,
+                                                                  ONE,
+                                                                  "instruction_fetch"));
+
+    // for next.timestamp = cur.timestamp + 1
+    packed_next_timestamp.allocate(this->pb, "packed_next_timestamp");
+    pack_next_timestamp.reset(new packing_gadget<FieldT>(this->pb, next->timestamp, packed_next_timestamp, "pack_next_timestamp"));
+
+    // that CPU accepted on (cur, temp)，ls_...这组参数是什么意思？？？邹玉娣。。。
+    ls_addr.allocate(this->pb, addr_size, "ls_addr"); //addr_size 值为 w-(libff::log2(w)-2); =29
+    ls_prev_val.allocate(this->pb, value_size, "ls_prev_val");//value_size值为2*w=64
+    ls_next_val.allocate(this->pb, value_size, "ls_next_val");
+    cpu_checker.reset(new ram_cpu_checker<ramT>(this->pb, cur->pc_addr, prev_pc_val, cur->cpu_state,
+                                                ls_addr, ls_prev_val, ls_next_val,
+                                                temp_next_cpu_state, temp_next_pc_addr, next->has_accepted,
+                                                "cpu_checker"));
+
+    // that load-then-store was correctly handled
+    ls_prev_val_digest.reset(new digest_variable<FieldT>(this->pb, digest_size, ls_prev_val, zero, "ls_prev_val_digest"));
+    ls_next_val_digest.reset(new digest_variable<FieldT>(this->pb, digest_size, ls_next_val, zero, "ls_next_val_digest"));
+    next_root_digest.reset(new digest_variable<FieldT>(this->pb, digest_size, next->root, zero, "next_root_digest"));
+    load_merkle_proof.reset(new merkle_authentication_path_variable<FieldT, HashT>(this->pb, addr_size, "load_merkle_proof"));
+    store_merkle_proof.reset(new merkle_authentication_path_variable<FieldT, HashT>(this->pb, addr_size, "store_merkle_proof"));
+	/*
+	template<typename FieldT, typename HashT>
+	using memory_load_store_gadget = merkle_tree_check_update_gadget<FieldT, HashT>;
+
+	*/
+    load_store_checker.reset(new memory_load_store_gadget<FieldT, HashT>(this->pb, addr_size, ls_addr,
+                                                                         *ls_prev_val_digest, *cur_root_digest, *load_merkle_proof,
+                                                                         *ls_next_val_digest, *next_root_digest, *store_merkle_proof, is_not_halt_case,
+                                                                         "load_store_checker"));
+    /*
+      If do_halt = 1: (final case)
+      that cur.has_accepted = 1
+      that next.root = 0, next.cpu_state = 0, next.pc_addr = 0
+      that next.timestamp = cur.timestamp and next.has_accepted = cur.has_accepted
+    */
+    do_halt.allocate(this->pb, "do_halt");
+    zero_root = pb_variable_array<FieldT>(next->root.size(), zero);
+    clear_next_root.reset(new bit_vector_copy_gadget<FieldT>(this->pb, zero_root, next->root, do_halt, chunk_size, "clear_next_root"));
+    clear_next_pc_addr.reset(new bit_vector_copy_gadget<FieldT>(this->pb, zero_pc_addr, next->pc_addr, do_halt, chunk_size, "clear_next_pc_addr"));
+    clear_next_cpu_state.reset(new bit_vector_copy_gadget<FieldT>(this->pb, zero_cpu_state, next->cpu_state, do_halt, chunk_size, "clear_cpu_state"));
+
+    copy_temp_next_pc_addr.reset(new bit_vector_copy_gadget<FieldT>(this->pb, temp_next_pc_addr, next->pc_addr, is_not_halt_case, chunk_size, "copy_temp_next_pc_addr"));
+    copy_temp_next_cpu_state.reset(new bit_vector_copy_gadget<FieldT>(this->pb, temp_next_cpu_state, next->cpu_state, is_not_halt_case, chunk_size, "copy_temp_next_cpu_state"));
+
+	
+	
+```
+
+对应的结构体解析为：
+```
+/** @file
+ *****************************************************************************
+
+ Declaration of interfaces for the Merkle tree check read gadget.
+
+ The gadget checks the following: given two roots R1 and R2, address A, two
+ values V1 and V2, and authentication path P, check that
+ - P is a valid authentication path for the value V1 as the A-th leaf in a Merkle tree with root R1, and
+ - P is a valid authentication path for the value V2 as the A-th leaf in a Merkle tree with root R2.
+
+ *****************************************************************************
+ * @author     This file is part of libsnark, developed by SCIPR Lab
+ *             and contributors (see AUTHORS).
+ * @copyright  MIT license (see LICENSE file)
+ *****************************************************************************/
+template<typename FieldT, typename HashT>
+class merkle_tree_check_update_gadget : public gadget<FieldT> {
+private:
+
+    std::vector<HashT> prev_hashers;
+    std::vector<block_variable<FieldT> > prev_hasher_inputs;
+    std::vector<digest_selector_gadget<FieldT> > prev_propagators;
+    std::vector<digest_variable<FieldT> > prev_internal_output;
+
+    std::vector<HashT> next_hashers;
+    std::vector<block_variable<FieldT> > next_hasher_inputs;
+    std::vector<digest_selector_gadget<FieldT> > next_propagators;
+    std::vector<digest_variable<FieldT> > next_internal_output;
+
+    std::shared_ptr<digest_variable<FieldT> > computed_next_root;
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > check_next_root;
+
+public:
+
+    const size_t digest_size;
+    const size_t tree_depth;
+
+    pb_variable_array<FieldT> address_bits;
+    digest_variable<FieldT> prev_leaf_digest;
+    digest_variable<FieldT> prev_root_digest;
+    merkle_authentication_path_variable<FieldT, HashT> prev_path;
+    digest_variable<FieldT> next_leaf_digest;
+    digest_variable<FieldT> next_root_digest;
+    merkle_authentication_path_variable<FieldT, HashT> next_path;
+    pb_linear_combination<FieldT> update_successful;
+
+    /* Note that while it is necessary to generate R1CS constraints
+       for prev_path, it is not necessary to do so for next_path. See
+       comment in the implementation of generate_r1cs_constraints() */
+
+    merkle_tree_check_update_gadget(protoboard<FieldT> &pb,
+                                    const size_t tree_depth,
+                                    const pb_variable_array<FieldT> &address_bits,
+                                    const digest_variable<FieldT> &prev_leaf_digest,
+                                    const digest_variable<FieldT> &prev_root_digest,
+                                    const merkle_authentication_path_variable<FieldT, HashT> &prev_path,
+                                    const digest_variable<FieldT> &next_leaf_digest,
+                                    const digest_variable<FieldT> &next_root_digest,
+                                    const merkle_authentication_path_variable<FieldT, HashT> &next_path,
+                                    const pb_linear_combination<FieldT> &update_successful,
+                                    const std::string &annotation_prefix);
+
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness();
+
+    static size_t root_size_in_bits();
+    /* for debugging purposes */
+    static size_t expected_constraints(const size_t tree_depth);
+};
+
+
+
+/** 
+ *****************************************************************************
+
+ Declaration of interfaces for the Merkle tree check read gadget.
+
+ The gadget checks the following: given a root R, address A, value V, and
+ authentication path P, check that P is a valid authentication path for the
+ value V as the A-th leaf in a Merkle tree with root R.
+
+ *****************************************************************************/
+template<typename FieldT, typename HashT>
+class merkle_tree_check_read_gadget : public gadget<FieldT> {
+private:
+
+    std::vector<HashT> hashers;
+    std::vector<block_variable<FieldT> > hasher_inputs;
+    std::vector<digest_selector_gadget<FieldT> > propagators;
+    std::vector<digest_variable<FieldT> > internal_output;
+
+    std::shared_ptr<digest_variable<FieldT> > computed_root;
+    std::shared_ptr<bit_vector_copy_gadget<FieldT> > check_root;
+
+public:
+
+    const size_t digest_size;
+    const size_t tree_depth;
+    pb_linear_combination_array<FieldT> address_bits;
+    digest_variable<FieldT> leaf;
+    digest_variable<FieldT> root;
+    merkle_authentication_path_variable<FieldT, HashT> path;
+    pb_linear_combination<FieldT> read_successful;
+
+    merkle_tree_check_read_gadget(protoboard<FieldT> &pb,
+                                  const size_t tree_depth,
+                                  const pb_linear_combination_array<FieldT> &address_bits,
+                                  const digest_variable<FieldT> &leaf_digest,
+                                  const digest_variable<FieldT> &root_digest,
+                                  const merkle_authentication_path_variable<FieldT, HashT> &path,
+                                  const pb_linear_combination<FieldT> &read_successful,
+                                  const std::string &annotation_prefix);
+
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness();
+
+    static size_t root_size_in_bits();
+    /* for debugging purposes */
+    static size_t expected_constraints(const size_t tree_depth);
+};
+
+template<typename FieldT, typename HashT>
+class merkle_authentication_path_variable : public gadget<FieldT> {
+public:
+
+    const size_t tree_depth;
+    std::vector<digest_variable<FieldT> > left_digests;
+    std::vector<digest_variable<FieldT> > right_digests;
+
+    merkle_authentication_path_variable(protoboard<FieldT> &pb,
+                                        const size_t tree_depth,
+                                        const std::string &annotation_prefix);
+
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness(const size_t address, const merkle_authentication_path &path);
+    merkle_authentication_path get_authentication_path(const size_t address) const;
+};
+
+template<typename FieldT>
+class digest_variable : public gadget<FieldT> {
+public:
+    size_t digest_size;
+    pb_variable_array<FieldT> bits;
+
+    digest_variable<FieldT>(protoboard<FieldT> &pb,
+                            const size_t digest_size,
+                            const std::string &annotation_prefix);
+
+    digest_variable<FieldT>(protoboard<FieldT> &pb,
+                            const size_t digest_size,
+                            const pb_variable_array<FieldT> &partial_bits,
+                            const pb_variable<FieldT> &padding,
+                            const std::string &annotation_prefix);
+
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness(const libff::bit_vector& contents);
+    libff::bit_vector get_digest() const;
+};
+template<typename FieldT>
+digest_variable<FieldT>::digest_variable(protoboard<FieldT> &pb,
+                                         const size_t digest_size,
+                                         const pb_variable_array<FieldT> &partial_bits,
+                                         const pb_variable<FieldT> &padding,
+                                         const std::string &annotation_prefix) :
+    gadget<FieldT>(pb, annotation_prefix), digest_size(digest_size)
+{
+    assert(bits.size() <= digest_size);
+    bits = partial_bits;
+    while (bits.size() != digest_size)
+    {
+        bits.emplace_back(padding);
+    }
+}
+
+template<typename FieldT>
+class field_vector_copy_gadget : public gadget<FieldT> {
+public:
+    const pb_variable_array<FieldT> source;
+    const pb_variable_array<FieldT> target;
+    const pb_linear_combination<FieldT> do_copy;
+
+    field_vector_copy_gadget(protoboard<FieldT> &pb,
+                             const pb_variable_array<FieldT> &source,
+                             const pb_variable_array<FieldT> &target,
+                             const pb_linear_combination<FieldT> &do_copy,
+                             const std::string &annotation_prefix="");
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness();
+};
+
+template<typename FieldT>
+class bit_vector_copy_gadget : public gadget<FieldT> {
+public:
+    const pb_variable_array<FieldT> source_bits;
+    const pb_variable_array<FieldT> target_bits;
+    const pb_linear_combination<FieldT> do_copy;
+
+    pb_variable_array<FieldT> packed_source;
+    pb_variable_array<FieldT> packed_target;
+
+    std::shared_ptr<multipacking_gadget<FieldT> > pack_source;
+    std::shared_ptr<multipacking_gadget<FieldT> > pack_target;
+    std::shared_ptr<field_vector_copy_gadget<FieldT> > copier;
+
+    const size_t chunk_size;
+    const size_t num_chunks;
+
+    bit_vector_copy_gadget(protoboard<FieldT> &pb,
+                           const pb_variable_array<FieldT> &source_bits,
+                           const pb_variable_array<FieldT> &target_bits,
+                           const pb_linear_combination<FieldT> &do_copy,
+                           const size_t chunk_size,
+                           const std::string &annotation_prefix="");
+    void generate_r1cs_constraints(const bool enforce_source_bitness, const bool enforce_target_bitness);
+    void generate_r1cs_witness();
+};
+
+
+template<typename FieldT>
+class packing_gadget : public gadget<FieldT> {
+private:
+    /* no internal variables */
+public:
+    const pb_linear_combination_array<FieldT> bits;
+    const pb_linear_combination<FieldT> packed;
+
+    packing_gadget(protoboard<FieldT> &pb,
+                   const pb_linear_combination_array<FieldT> &bits,
+                   const pb_linear_combination<FieldT> &packed,
+                   const std::string &annotation_prefix="") :
+        gadget<FieldT>(pb, annotation_prefix), bits(bits), packed(packed) {}
+
+    void generate_r1cs_constraints(const bool enforce_bitness);
+    /* adds constraint result = \sum  bits[i] * 2^i */
+
+    void generate_r1cs_witness_from_packed();
+    void generate_r1cs_witness_from_bits();
+};
+
+template<typename FieldT>
+class multipacking_gadget : public gadget<FieldT> {
+private:
+    std::vector<packing_gadget<FieldT> > packers;
+public:
+    const pb_linear_combination_array<FieldT> bits;
+    const pb_linear_combination_array<FieldT> packed_vars;
+
+    const size_t chunk_size;
+    const size_t num_chunks;
+    // const size_t last_chunk_size;
+
+    multipacking_gadget(protoboard<FieldT> &pb,
+                        const pb_linear_combination_array<FieldT> &bits,
+                        const pb_linear_combination_array<FieldT> &packed_vars,
+                        const size_t chunk_size,
+                        const std::string &annotation_prefix="");
+    void generate_r1cs_constraints(const bool enforce_bitness);
+    void generate_r1cs_witness_from_packed();
+    void generate_r1cs_witness_from_bits();
+};
+template<typename FieldT>
+class pb_linear_combination_array : private std::vector<pb_linear_combination<FieldT> >
+{
+    typedef std::vector<pb_linear_combination<FieldT> > contents;
+public:
+    using typename contents::iterator;
+    using typename contents::const_iterator;
+    using typename contents::reverse_iterator;
+    using typename contents::const_reverse_iterator;
+
+    using contents::begin;
+    using contents::end;
+    using contents::rbegin;
+    using contents::rend;
+    using contents::emplace_back;
+    using contents::insert;
+    using contents::reserve;
+    using contents::size;
+    using contents::empty;
+    using contents::operator[];
+    using contents::resize;
+
+    pb_linear_combination_array() : contents() {};
+    pb_linear_combination_array(const pb_variable_array<FieldT> &arr) { for (auto &v : arr) this->emplace_back(pb_linear_combination<FieldT>(v)); };
+    pb_linear_combination_array(size_t count) : contents(count) {};
+    pb_linear_combination_array(size_t count, const pb_linear_combination<FieldT> &value) : contents(count, value) {};
+    pb_linear_combination_array(typename contents::const_iterator first, typename contents::const_iterator last) : contents(first, last) {};
+    pb_linear_combination_array(typename contents::const_reverse_iterator first, typename contents::const_reverse_iterator last) : contents(first, last) {};
+
+    void evaluate(protoboard<FieldT> &pb) const;
+
+    void fill_with_field_elements(protoboard<FieldT> &pb, const std::vector<FieldT>& vals) const;
+    void fill_with_bits(protoboard<FieldT> &pb, const libff::bit_vector& bits) const;
+    void fill_with_bits_of_ulong(protoboard<FieldT> &pb, const unsigned long i) const;
+    void fill_with_bits_of_field_element(protoboard<FieldT> &pb, const FieldT &r) const;
+
+    std::vector<FieldT> get_vals(const protoboard<FieldT> &pb) const;
+    libff::bit_vector get_bits(const protoboard<FieldT> &pb) const;
+
+    FieldT get_field_element_from_bits(const protoboard<FieldT> &pb) const;
+};
+template<typename FieldT>
+class pb_linear_combination : public linear_combination<FieldT> {
+public:
+    bool is_variable;
+    lc_index_t index;
+
+    pb_linear_combination();
+    pb_linear_combination(const pb_variable<FieldT> &var);
+
+    void assign(protoboard<FieldT> &pb, const linear_combination<FieldT> &lc);
+    void evaluate(protoboard<FieldT> &pb) const;
+
+    bool is_constant() const;
+    FieldT constant_term() const;
+};
+/**
+ * A linear combination represents a formal expression of the form "sum_i coeff_i * x_{index_i}".
+ */
+template<typename FieldT>
+class linear_combination {
+public:
+
+    std::vector<linear_term<FieldT> > terms;
+
+    linear_combination() {};
+    linear_combination(const integer_coeff_t int_coeff);
+    linear_combination(const FieldT &field_coeff);
+    linear_combination(const variable<FieldT> &var);
+    linear_combination(const linear_term<FieldT> &lt);
+    linear_combination(const std::vector<linear_term<FieldT> > &all_terms);
+
+    /* for supporting range-based for loops over linear_combination */
+    typename std::vector<linear_term<FieldT> >::const_iterator begin() const;
+    typename std::vector<linear_term<FieldT> >::const_iterator end() const;
+
+    void add_term(const variable<FieldT> &var);
+    void add_term(const variable<FieldT> &var, const integer_coeff_t int_coeff);
+    void add_term(const variable<FieldT> &var, const FieldT &field_coeff);
+
+    void add_term(const linear_term<FieldT> &lt);
+
+    FieldT evaluate(const std::vector<FieldT> &assignment) const;
+
+    linear_combination<FieldT> operator*(const integer_coeff_t int_coeff) const;
+    linear_combination<FieldT> operator*(const FieldT &field_coeff) const;
+
+    linear_combination<FieldT> operator+(const linear_combination<FieldT> &other) const;
+
+    linear_combination<FieldT> operator-(const linear_combination<FieldT> &other) const;
+    linear_combination<FieldT> operator-() const;
+
+    bool operator==(const linear_combination<FieldT> &other) const;
+
+    bool is_valid(const size_t num_variables) const;
+
+    void print(const std::map<size_t, std::string> &variable_annotations = std::map<size_t, std::string>()) const;
+    void print_with_assignment(const std::vector<FieldT> &full_assignment, const std::map<size_t, std::string> &variable_annotations = std::map<size_t, std::string>()) const;
+
+    friend std::ostream& operator<< <FieldT>(std::ostream &out, const linear_combination<FieldT> &lc);
+    friend std::istream& operator>> <FieldT>(std::istream &in, linear_combination<FieldT> &lc);
+};
+
+
+
+template<typename ramT>
+class ram_pcd_local_data_variable : public r1cs_pcd_local_data_variable<ram_base_field<ramT> > {
+public:
+    typedef ram_base_field<ramT> FieldT;
+
+    pb_variable<FieldT> is_halt_case;
+
+    ram_pcd_local_data_variable(protoboard<FieldT> &pb,
+                                const std::string &annotation_prefix);
+};
+/*************************** Local data variable *****************************/
+
+/**
+ * A variable to represent an r1cs_pcd_local_data.
+ */
+template<typename FieldT>
+class r1cs_pcd_local_data_variable : public gadget<FieldT> {
+protected:
+    size_t num_vars_at_construction;
+public:
+
+    pb_variable_array<FieldT> all_vars;
+
+    r1cs_pcd_local_data_variable(protoboard<FieldT> &pb,
+                                 const std::string &annotation_prefix);
+    void update_all_vars();
+
+    void generate_r1cs_witness(const std::shared_ptr<r1cs_pcd_local_data<FieldT> > &local_data);
+
+    virtual ~r1cs_pcd_local_data_variable() = default;
+};
+
+
+
+
+template<typename FieldT>
+class pb_variable_array : private std::vector<pb_variable<FieldT> >
+{
+    typedef std::vector<pb_variable<FieldT> > contents;
+public:
+    using typename contents::iterator;
+    using typename contents::const_iterator;
+    using typename contents::reverse_iterator;
+    using typename contents::const_reverse_iterator;
+
+    using contents::begin;
+    using contents::end;
+    using contents::rbegin;
+    using contents::rend;
+    using contents::emplace_back;
+    using contents::insert;
+    using contents::reserve;
+    using contents::size;
+    using contents::empty;
+    using contents::operator[];
+    using contents::resize;
+
+    pb_variable_array() : contents() {};
+    pb_variable_array(size_t count, const pb_variable<FieldT> &value) : contents(count, value) {};
+    pb_variable_array(typename contents::const_iterator first, typename contents::const_iterator last) : contents(first, last) {};
+    pb_variable_array(typename contents::const_reverse_iterator first, typename contents::const_reverse_iterator last) : contents(first, last) {};
+    void allocate(protoboard<FieldT> &pb, const size_t n, const std::string &annotation_prefix="");
+
+    void fill_with_field_elements(protoboard<FieldT> &pb, const std::vector<FieldT>& vals) const;
+    void fill_with_bits(protoboard<FieldT> &pb, const libff::bit_vector& bits) const;
+    void fill_with_bits_of_ulong(protoboard<FieldT> &pb, const unsigned long i) const;
+    void fill_with_bits_of_field_element(protoboard<FieldT> &pb, const FieldT &r) const;
+
+    std::vector<FieldT> get_vals(const protoboard<FieldT> &pb) const;
+    libff::bit_vector get_bits(const protoboard<FieldT> &pb) const;
+
+    FieldT get_field_element_from_bits(const protoboard<FieldT> &pb) const;
+};
+
+/* allocates pb_variable<FieldT> array in MSB->LSB order */
+template<typename FieldT>
+void pb_variable_array<FieldT>::allocate(protoboard<FieldT> &pb, const size_t n, const std::string &annotation_prefix)
+{
+#ifdef DEBUG
+    assert(annotation_prefix != "");
+#endif
+    (*this).resize(n);
+
+    for (size_t i = 0; i < n; ++i)
+    {
+        (*this)[i].allocate(pb, FMT(annotation_prefix, "_%zu", i));
+    }
+}
+template<typename FieldT>
+void pb_variable<FieldT>::allocate(protoboard<FieldT> &pb, const std::string &annotation)
+{
+    this->index = pb.allocate_var_index(annotation);
+}
+template<typename FieldT>
+var_index_t protoboard<FieldT>::allocate_var_index(const std::string &annotation)
+{
+#ifdef DEBUG
+    assert(annotation != "");
+    constraint_system.variable_annotations[next_free_var] = annotation;
+#else
+    libff::UNUSED(annotation);
+#endif
+    ++constraint_system.auxiliary_input_size;
+    values.emplace_back(FieldT::zero());
+    return next_free_var++;
+}
+
+template<typename FieldT>
+class pb_variable : public variable<FieldT> {
+public:
+    pb_variable(const var_index_t index = 0) : variable<FieldT>(index) {};
+
+    void allocate(protoboard<FieldT> &pb, const std::string &annotation="");
+};
+/********************************* Variable **********************************/
+
+/**
+ * A variable represents a formal expression of the form "x_{index}".
+ */
+template<typename FieldT>
+class variable {
+public:
+
+    var_index_t index;
+
+    variable(const var_index_t index = 0) : index(index) {};
+
+    linear_term<FieldT> operator*(const integer_coeff_t int_coeff) const;
+    linear_term<FieldT> operator*(const FieldT &field_coeff) const;
+
+    linear_combination<FieldT> operator+(const linear_combination<FieldT> &other) const;
+    linear_combination<FieldT> operator-(const linear_combination<FieldT> &other) const;
+
+    linear_term<FieldT> operator-() const;
+
+    bool operator==(const variable<FieldT> &other) const;
+};
+
+
+
+
+/**
+ * A RAM message specializes the generic PCD message, in order to
+ * obtain a more user-friendly print method.
+ */
+template<typename ramT>
+class ram_pcd_message : public r1cs_pcd_message<ram_base_field<ramT> > {
+private:
+    void print_bits(const libff::bit_vector &bv) const;
+
+public:
+    typedef ram_base_field<ramT> FieldT;
+
+    ram_architecture_params<ramT> ap;
+
+    size_t timestamp;
+    libff::bit_vector root_initial;
+    libff::bit_vector root;
+    size_t pc_addr;
+    libff::bit_vector cpu_state;
+    size_t pc_addr_initial;
+    libff::bit_vector cpu_state_initial;
+    bool has_accepted;
+
+    ram_pcd_message(const size_t type,
+                    const ram_architecture_params<ramT> &ap,
+                    const size_t timestamp,
+                    const libff::bit_vector root_initial,
+                    const libff::bit_vector root,
+                    const size_t pc_addr,
+                    const libff::bit_vector cpu_state,
+                    const size_t pc_addr_initial,
+                    const libff::bit_vector cpu_state_initial,
+                    const bool has_accepted);
+
+    libff::bit_vector unpacked_payload_as_bits() const;
+    r1cs_variable_assignment<FieldT> payload_as_r1cs_variable_assignment() const;
+    void print() const;
+
+    static size_t unpacked_payload_size_in_bits(const ram_architecture_params<ramT> &ap);
+};
+
+template<typename ramT>
+size_t ram_pcd_message<ramT>::unpacked_payload_size_in_bits(const ram_architecture_params<ramT> &ap)
+{
+    const size_t digest_size = CRH_with_bit_out_gadget<FieldT>::get_digest_len(); //1*298
+	//for w=32,k=16. 1983=300+2*298+2*29+2*(16*32+2)+1
+    return (ramT::timestamp_length + // timestamp //300
+            2*digest_size + // root, root_initial 
+            2*ap.address_size() + // pc_addr, pc_addr_initial //2*(w-(libff::log2(w)-2))
+            2*ap.cpu_state_size() + // cpu_state, cpu_state_initial //2*(k * w + 2) 
+            1); // has_accepted
+}
+
+/********************************* Message ***********************************/
+
+/**
+ * A message for R1CS PCD.
+ *
+ * It is a pair, consisting of
+ * - a type (a positive integer), and
+ * - a payload (a vector of field elements).
+ */
+template<typename FieldT>
+class r1cs_pcd_message {
+public:
+    size_t type;
+
+    r1cs_pcd_message(const size_t type);
+    virtual r1cs_variable_assignment<FieldT> payload_as_r1cs_variable_assignment() const = 0;
+    r1cs_variable_assignment<FieldT> as_r1cs_variable_assignment() const;
+
+    virtual void print() const;
+    virtual ~r1cs_pcd_message() = default;
+};
+
+std::shared_ptr<r1cs_pcd_message_variable<FieldT> > outgoing_message;
+ 
+template<typename ramT>
+class ram_pcd_message_variable : public r1cs_pcd_message_variable<ram_base_field<ramT> > {
+public:
+    ram_architecture_params<ramT> ap;
+
+    typedef ram_base_field<ramT> FieldT;
+
+    pb_variable_array<FieldT> packed_payload;
+
+    pb_variable_array<FieldT> timestamp;
+    pb_variable_array<FieldT> root_initial;
+    pb_variable_array<FieldT> root;
+    pb_variable_array<FieldT> pc_addr;
+    pb_variable_array<FieldT> cpu_state;
+    pb_variable_array<FieldT> pc_addr_initial;
+    pb_variable_array<FieldT> cpu_state_initial;
+    pb_variable<FieldT> has_accepted;
+
+    pb_variable_array<FieldT> all_unpacked_vars;
+
+    std::shared_ptr<multipacking_gadget<FieldT> > unpack_payload;
+
+    ram_pcd_message_variable(protoboard<FieldT> &pb,
+                             const ram_architecture_params<ramT> &ap,
+                             const std::string &annotation_prefix);
+
+    void allocate_unpacked_part();
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness_from_bits();
+    void generate_r1cs_witness_from_packed();
+
+    std::shared_ptr<r1cs_pcd_message<FieldT> > get_message() const;
+};
+
+template<typename FieldT, typename protoboardT> // FieldT 对应 mnt4_Fr ， protoboardT 对应为 tinyram_protoboard  
+compliance_predicate_handler<FieldT, protoboardT>::compliance_predicate_handler(const protoboardT &pb,
+                                                                                const size_t name,
+                                                                                const size_t type,
+                                                                                const size_t max_arity,
+                                                                                const bool relies_on_same_type_inputs,
+                                                                                const std::set<size_t> accepted_input_types) :
+    pb(pb), name(name), type(type), max_arity(max_arity), relies_on_same_type_inputs(relies_on_same_type_inputs),
+    accepted_input_types(accepted_input_types)
+{
+    incoming_messages.resize(max_arity); // std::vector<std::shared_ptr<r1cs_pcd_message_variable<FieldT> > > incoming_messages; max_arity 初始化为1
+}
+
+
+/***************************** Message variable ******************************/
+
+/**
+ * A variable to represent an r1cs_pcd_message.
+ */
+template<typename FieldT>
+class r1cs_pcd_message_variable : public gadget<FieldT> {
+protected:
+    size_t num_vars_at_construction;
+public:
+
+    pb_variable<FieldT> type;
+
+    pb_variable_array<FieldT> all_vars;
+
+    r1cs_pcd_message_variable(protoboard<FieldT> &pb,
+                              const std::string &annotation_prefix);
+    void update_all_vars();
+
+    void generate_r1cs_witness(const std::shared_ptr<r1cs_pcd_message<FieldT> > &message);
+    virtual std::shared_ptr<r1cs_pcd_message<FieldT> > get_message() const = 0;
+
+    virtual ~r1cs_pcd_message_variable() = default;
+};
+
+template<typename FieldT>
+void r1cs_pcd_message_variable<FieldT>::update_all_vars()
+{
+    /* NOTE: this assumes that r1cs_pcd_message_variable has been the
+     * only gadget allocating variables on the protoboard and needs to
+     * be updated, e.g., in multicore variable allocation scenario. */
+	//此时num_vars_at_construction=1,pb.num_variables()=8
+    for (size_t var_idx = num_vars_at_construction + 1; var_idx <= this->pb.num_variables(); ++var_idx)
+    {
+        all_vars.emplace_back(pb_variable<FieldT>(var_idx));
+    }
+}
+
+template<typename FieldT>
+class gadget {
+protected:
+    protoboard<FieldT> &pb;
+    const std::string annotation_prefix;
+public:
+    gadget(protoboard<FieldT> &pb, const std::string &annotation_prefix="");
+};
+
+template<typename FieldT> // FieldT 对应 mnt4_Fr
+using CRH_with_bit_out_gadget = knapsack_CRH_with_bit_out_gadget<FieldT>;
+
+/********************** Knapsack with binary output **************************/
+
+template<typename FieldT>
+class knapsack_CRH_with_bit_out_gadget : public gadget<FieldT> {
+public:
+    typedef libff::bit_vector hash_value_type;
+    typedef merkle_authentication_path merkle_authentication_path_type;
+
+    size_t input_len;
+    size_t dimension;
+
+    pb_linear_combination_array<FieldT> output;
+
+    std::shared_ptr<knapsack_CRH_with_field_out_gadget<FieldT> > hasher;
+
+    block_variable<FieldT> input_block;
+    digest_variable<FieldT> output_digest;
+
+    knapsack_CRH_with_bit_out_gadget(protoboard<FieldT> &pb,
+                                     const size_t input_len,
+                                     const block_variable<FieldT> &input_block,
+                                     const digest_variable<FieldT> &output_digest,
+                                     const std::string &annotation_prefix);
+    void generate_r1cs_constraints(const bool enforce_bitness=true);
+    void generate_r1cs_witness();
+
+    static size_t get_digest_len(); //knapsack_dimension<FieldT>::dimension * FieldT::size_in_bits(); //1*298 size_in_bits() 为 return num_bits;//num_bits 为 mnt4_Fr::num_bits = 298;
+    static size_t get_block_len(); /* return 0 as block length, as the hash function is variable-input */
+    static hash_value_type get_hash(const libff::bit_vector &input);
+    static void sample_randomness(const size_t input_len);
+
+    /* for debugging */
+    static size_t expected_constraints(const bool enforce_bitness=true);
+};
+
+template<typename FieldT>
+struct knapsack_dimension {
+    // the size of FieldT should be (approximately) at least 200 bits
+    static const size_t dimension = 1;
+};
+```

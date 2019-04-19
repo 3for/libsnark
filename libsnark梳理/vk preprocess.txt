@@ -1,0 +1,140 @@
+/**
+ * Convert a (non-processed) verification key into a processed verification key.
+ */
+template<typename ppT>
+r1cs_ppzksnark_processed_verification_key<ppT> r1cs_ppzksnark_verifier_process_vk(const r1cs_ppzksnark_verification_key<ppT> &vk);
+
+
+template <typename ppT>
+r1cs_ppzksnark_processed_verification_key<ppT> r1cs_ppzksnark_verifier_process_vk(const r1cs_ppzksnark_verification_key<ppT> &vk)
+{
+    libff::enter_block("Call to r1cs_ppzksnark_verifier_process_vk");
+
+    r1cs_ppzksnark_processed_verification_key<ppT> pvk;
+    pvk.pp_G2_one_precomp        = ppT::precompute_G2(libff::G2<ppT>::one());
+    pvk.vk_alphaA_g2_precomp     = ppT::precompute_G2(vk.alphaA_g2);
+    pvk.vk_alphaB_g1_precomp     = ppT::precompute_G1(vk.alphaB_g1);
+    pvk.vk_alphaC_g2_precomp     = ppT::precompute_G2(vk.alphaC_g2);
+    pvk.vk_rC_Z_g2_precomp       = ppT::precompute_G2(vk.rC_Z_g2);
+    pvk.vk_gamma_g2_precomp      = ppT::precompute_G2(vk.gamma_g2);
+    pvk.vk_gamma_beta_g1_precomp = ppT::precompute_G1(vk.gamma_beta_g1);
+    pvk.vk_gamma_beta_g2_precomp = ppT::precompute_G2(vk.gamma_beta_g2);
+
+    pvk.encoded_IC_query = vk.encoded_IC_query;
+
+    libff::leave_block("Call to r1cs_ppzksnark_verifier_process_vk");
+
+    return pvk;
+}
+
+
+bn128_ate_G2_precomp bn128_pp::precompute_G2(const bn128_G2 &Q)
+{
+    return bn128_ate_precompute_G2(Q);
+}
+
+bn128_ate_G2_precomp bn128_ate_precompute_G2(const bn128_G2& Q)
+{
+    enter_block("Call to bn128_ate_precompute_G2");
+
+    bn128_ate_G2_precomp result;
+    bn::components::precomputeG2(result.coeffs, result.Q, Q.coord);
+
+    leave_block("Call to bn128_ate_precompute_G2");
+    return result;
+}
+
+
+
+
+/**
+ * A processed verification key for the R1CS ppzkSNARK.
+ *
+ * Compared to a (non-processed) verification key, a processed verification key
+ * contains a small constant amount of additional pre-computed information that
+ * enables a faster verification time.
+ */
+template<typename ppT>
+class r1cs_ppzksnark_processed_verification_key {
+public:
+    libff::G2_precomp<ppT> pp_G2_one_precomp;
+    libff::G2_precomp<ppT> vk_alphaA_g2_precomp;
+    libff::G1_precomp<ppT> vk_alphaB_g1_precomp;
+    libff::G2_precomp<ppT> vk_alphaC_g2_precomp;
+    libff::G2_precomp<ppT> vk_rC_Z_g2_precomp;
+    libff::G2_precomp<ppT> vk_gamma_g2_precomp;
+    libff::G1_precomp<ppT> vk_gamma_beta_g1_precomp;
+    libff::G2_precomp<ppT> vk_gamma_beta_g2_precomp;
+
+    accumulation_vector<libff::G1<ppT> > encoded_IC_query;
+
+    bool operator==(const r1cs_ppzksnark_processed_verification_key &other) const;
+    friend std::ostream& operator<< <ppT>(std::ostream &out, const r1cs_ppzksnark_processed_verification_key<ppT> &pvk);
+    friend std::istream& operator>> <ppT>(std::istream &in, r1cs_ppzksnark_processed_verification_key<ppT> &pvk);
+};
+
+/**
+ * A verification key for the R1CS ppzkSNARK.
+ */
+template<typename ppT>
+class r1cs_ppzksnark_verification_key {
+public:
+    libff::G2<ppT> alphaA_g2;
+    libff::G1<ppT> alphaB_g1;
+    libff::G2<ppT> alphaC_g2;
+    libff::G2<ppT> gamma_g2;
+    libff::G1<ppT> gamma_beta_g1;
+    libff::G2<ppT> gamma_beta_g2;
+    libff::G2<ppT> rC_Z_g2;
+
+    accumulation_vector<libff::G1<ppT> > encoded_IC_query;
+
+    r1cs_ppzksnark_verification_key() = default;
+    r1cs_ppzksnark_verification_key(const libff::G2<ppT> &alphaA_g2,
+                                    const libff::G1<ppT> &alphaB_g1,
+                                    const libff::G2<ppT> &alphaC_g2,
+                                    const libff::G2<ppT> &gamma_g2,
+                                    const libff::G1<ppT> &gamma_beta_g1,
+                                    const libff::G2<ppT> &gamma_beta_g2,
+                                    const libff::G2<ppT> &rC_Z_g2,
+                                    const accumulation_vector<libff::G1<ppT> > &eIC) :
+        alphaA_g2(alphaA_g2),
+        alphaB_g1(alphaB_g1),
+        alphaC_g2(alphaC_g2),
+        gamma_g2(gamma_g2),
+        gamma_beta_g1(gamma_beta_g1),
+        gamma_beta_g2(gamma_beta_g2),
+        rC_Z_g2(rC_Z_g2),
+        encoded_IC_query(eIC)
+    {};
+
+    size_t G1_size() const
+    {
+        return 2 + encoded_IC_query.size();
+    }
+
+    size_t G2_size() const
+    {
+        return 5;
+    }
+
+    size_t size_in_bits() const
+    {
+        return (2 * libff::G1<ppT>::size_in_bits() + encoded_IC_query.size_in_bits() + 5 * libff::G2<ppT>::size_in_bits());
+    }
+
+    void print_size() const
+    {
+        libff::print_indent(); printf("* G1 elements in VK: %zu\n", this->G1_size());
+        libff::print_indent(); printf("* G2 elements in VK: %zu\n", this->G2_size());
+        libff::print_indent(); printf("* VK size in bits: %zu\n", this->size_in_bits());
+    }
+
+    bool operator==(const r1cs_ppzksnark_verification_key<ppT> &other) const;
+    friend std::ostream& operator<< <ppT>(std::ostream &out, const r1cs_ppzksnark_verification_key<ppT> &vk);
+    friend std::istream& operator>> <ppT>(std::istream &in, r1cs_ppzksnark_verification_key<ppT> &vk);
+
+    static r1cs_ppzksnark_verification_key<ppT> dummy_verification_key(const size_t input_size);
+};
+
+

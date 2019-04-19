@@ -1,0 +1,436 @@
+```
+
+	pk.print_size();
+    vk.print_size();
+
+  * G1 elements in PK: 7767
+  * Non-zero G1 elements in PK: 5780
+  * G2 elements in PK: 1102
+  * Non-zero G2 elements in PK: 493
+  * PK size in bits: 1853349
+  * G1 elements in VK: 102
+  * G2 elements in VK: 5
+  * VK size in bits: 35210
+
+  * Peak vsize (physical memory+swap) in mebibytes (after generator): 41
+
+
+```
+
+```
+/******************** Knowledge commitment vector ****************************/
+
+/**
+ * A knowledge commitment vector is a sparse vector of knowledge commitments.
+ */
+template<typename T1, typename T2>
+using knowledge_commitment_vector = sparse_vector<knowledge_commitment<T1, T2> >;
+
+template<typename EC_ppT>
+using G1_vector = std::vector<G1<EC_ppT> >;
+
+/**
+ * A proving key for the R1CS ppzkSNARK.
+ */
+template<typename ppT>
+class r1cs_ppzksnark_proving_key {
+public:
+    knowledge_commitment_vector<libff::G1<ppT>, libff::G1<ppT> > A_query;
+    knowledge_commitment_vector<libff::G2<ppT>, libff::G1<ppT> > B_query;
+    knowledge_commitment_vector<libff::G1<ppT>, libff::G1<ppT> > C_query;
+    libff::G1_vector<ppT> H_query;
+    libff::G1_vector<ppT> K_query;
+
+    r1cs_ppzksnark_constraint_system<ppT> constraint_system;
+
+    r1cs_ppzksnark_proving_key() {};
+    r1cs_ppzksnark_proving_key<ppT>& operator=(const r1cs_ppzksnark_proving_key<ppT> &other) = default;
+    r1cs_ppzksnark_proving_key(const r1cs_ppzksnark_proving_key<ppT> &other) = default;
+    r1cs_ppzksnark_proving_key(r1cs_ppzksnark_proving_key<ppT> &&other) = default;
+    r1cs_ppzksnark_proving_key(knowledge_commitment_vector<libff::G1<ppT>, libff::G1<ppT> > &&A_query,
+                               knowledge_commitment_vector<libff::G2<ppT>, libff::G1<ppT> > &&B_query,
+                               knowledge_commitment_vector<libff::G1<ppT>, libff::G1<ppT> > &&C_query,
+                               libff::G1_vector<ppT> &&H_query,
+                               libff::G1_vector<ppT> &&K_query,
+                               r1cs_ppzksnark_constraint_system<ppT> &&constraint_system) :
+        A_query(std::move(A_query)),
+        B_query(std::move(B_query)),
+        C_query(std::move(C_query)),
+        H_query(std::move(H_query)),
+        K_query(std::move(K_query)),
+        constraint_system(std::move(constraint_system))
+    {};
+
+    size_t G1_size() const
+    {
+        return 2*(A_query.domain_size() + C_query.domain_size()) + B_query.domain_size() + H_query.size() + K_query.size();
+    }
+
+    size_t G2_size() const
+    {
+        return B_query.domain_size();
+    }
+
+    size_t G1_sparse_size() const
+    {
+        return 2*(A_query.size() + C_query.size()) + B_query.size() + H_query.size() + K_query.size();
+    }
+
+    size_t G2_sparse_size() const
+    {
+        return B_query.size();
+    }
+
+    size_t size_in_bits() const
+    {
+        return A_query.size_in_bits() + B_query.size_in_bits() + C_query.size_in_bits() + libff::size_in_bits(H_query) + libff::size_in_bits(K_query);
+    }
+
+    void print_size() const
+    {
+        libff::print_indent(); printf("* G1 elements in PK: %zu\n", this->G1_size());
+        libff::print_indent(); printf("* Non-zero G1 elements in PK: %zu\n", this->G1_sparse_size());
+        libff::print_indent(); printf("* G2 elements in PK: %zu\n", this->G2_size());
+        libff::print_indent(); printf("* Non-zero G2 elements in PK: %zu\n", this->G2_sparse_size());
+        libff::print_indent(); printf("* PK size in bits: %zu\n", this->size_in_bits());
+    }
+
+    bool operator==(const r1cs_ppzksnark_proving_key<ppT> &other) const;
+    friend std::ostream& operator<< <ppT>(std::ostream &out, const r1cs_ppzksnark_proving_key<ppT> &pk);
+    friend std::istream& operator>> <ppT>(std::istream &in, r1cs_ppzksnark_proving_key<ppT> &pk);
+};
+
+
+/**
+ * A verification key for the R1CS ppzkSNARK.
+ */
+template<typename ppT>
+class r1cs_ppzksnark_verification_key {
+public:
+    libff::G2<ppT> alphaA_g2;
+    libff::G1<ppT> alphaB_g1;
+    libff::G2<ppT> alphaC_g2;
+    libff::G2<ppT> gamma_g2;
+    libff::G1<ppT> gamma_beta_g1;
+    libff::G2<ppT> gamma_beta_g2;
+    libff::G2<ppT> rC_Z_g2;
+
+    accumulation_vector<libff::G1<ppT> > encoded_IC_query;
+
+    r1cs_ppzksnark_verification_key() = default;
+    r1cs_ppzksnark_verification_key(const libff::G2<ppT> &alphaA_g2,
+                                    const libff::G1<ppT> &alphaB_g1,
+                                    const libff::G2<ppT> &alphaC_g2,
+                                    const libff::G2<ppT> &gamma_g2,
+                                    const libff::G1<ppT> &gamma_beta_g1,
+                                    const libff::G2<ppT> &gamma_beta_g2,
+                                    const libff::G2<ppT> &rC_Z_g2,
+                                    const accumulation_vector<libff::G1<ppT> > &eIC) :
+        alphaA_g2(alphaA_g2),
+        alphaB_g1(alphaB_g1),
+        alphaC_g2(alphaC_g2),
+        gamma_g2(gamma_g2),
+        gamma_beta_g1(gamma_beta_g1),
+        gamma_beta_g2(gamma_beta_g2),
+        rC_Z_g2(rC_Z_g2),
+        encoded_IC_query(eIC)
+    {};
+
+    size_t G1_size() const
+    {
+        return 2 + encoded_IC_query.size();
+    }
+
+    size_t G2_size() const
+    {
+        return 5;
+    }
+
+    size_t size_in_bits() const
+    {
+        return (2 * libff::G1<ppT>::size_in_bits() + encoded_IC_query.size_in_bits() + 5 * libff::G2<ppT>::size_in_bits());
+    }
+
+    void print_size() const
+    {
+        libff::print_indent(); printf("* G1 elements in VK: %zu\n", this->G1_size());
+        libff::print_indent(); printf("* G2 elements in VK: %zu\n", this->G2_size());
+        libff::print_indent(); printf("* VK size in bits: %zu\n", this->size_in_bits());
+    }
+
+    bool operator==(const r1cs_ppzksnark_verification_key<ppT> &other) const;
+    friend std::ostream& operator<< <ppT>(std::ostream &out, const r1cs_ppzksnark_verification_key<ppT> &vk);
+    friend std::istream& operator>> <ppT>(std::istream &in, r1cs_ppzksnark_verification_key<ppT> &vk);
+
+    static r1cs_ppzksnark_verification_key<ppT> dummy_verification_key(const size_t input_size);
+};
+
+
+/**
+ * A processed verification key for the R1CS ppzkSNARK.
+ *
+ * Compared to a (non-processed) verification key, a processed verification key
+ * contains a small constant amount of additional pre-computed information that
+ * enables a faster verification time.
+ */
+template<typename ppT>
+class r1cs_ppzksnark_processed_verification_key {
+public:
+    libff::G2_precomp<ppT> pp_G2_one_precomp;
+    libff::G2_precomp<ppT> vk_alphaA_g2_precomp;
+    libff::G1_precomp<ppT> vk_alphaB_g1_precomp;
+    libff::G2_precomp<ppT> vk_alphaC_g2_precomp;
+    libff::G2_precomp<ppT> vk_rC_Z_g2_precomp;
+    libff::G2_precomp<ppT> vk_gamma_g2_precomp;
+    libff::G1_precomp<ppT> vk_gamma_beta_g1_precomp;
+    libff::G2_precomp<ppT> vk_gamma_beta_g2_precomp;
+
+    accumulation_vector<libff::G1<ppT> > encoded_IC_query;
+
+    bool operator==(const r1cs_ppzksnark_processed_verification_key &other) const;
+    friend std::ostream& operator<< <ppT>(std::ostream &out, const r1cs_ppzksnark_processed_verification_key<ppT> &pvk);
+    friend std::istream& operator>> <ppT>(std::istream &in, r1cs_ppzksnark_processed_verification_key<ppT> &pvk);
+};
+
+template<typename EC_ppT>
+using G1_precomp = typename EC_ppT::G1_precomp_type;
+template<typename EC_ppT>
+using G2_precomp = typename EC_ppT::G2_precomp_type;
+
+//对于BN128 CURVE，对应的type如下：
+typedef bn128_ate_G1_precomp G1_precomp_type;
+typedef bn128_ate_G2_precomp G2_precomp_type;
+
+struct bn128_ate_G1_precomp {
+    bn::Fp P[3];
+
+    bool operator==(const bn128_ate_G1_precomp &other) const;
+    friend std::ostream& operator<<(std::ostream &out, const bn128_ate_G1_precomp &prec_P);
+    friend std::istream& operator>>(std::istream &in, bn128_ate_G1_precomp &prec_P);
+};
+
+typedef bn::Fp6 bn128_ate_ell_coeffs;
+
+struct bn128_ate_G2_precomp {
+    bn::Fp2 Q[3];
+    std::vector<bn128_ate_ell_coeffs> coeffs;
+
+    bool operator==(const bn128_ate_G2_precomp &other) const;
+    friend std::ostream& operator<<(std::ostream &out, const bn128_ate_G2_precomp &prec_Q);
+    friend std::istream& operator>>(std::istream &in, bn128_ate_G2_precomp &prec_Q);
+};
+
+
+/**
+ * A processed verification key for the R1CS ppzkSNARK.
+ *
+ * Compared to a (non-processed) verification key, a processed verification key
+ * contains a small constant amount of additional pre-computed information that
+ * enables a faster verification time.
+ */
+template<typename ppT>
+class r1cs_ppzksnark_processed_verification_key {
+public:
+    libff::G2_precomp<ppT> pp_G2_one_precomp;
+    libff::G2_precomp<ppT> vk_alphaA_g2_precomp;
+    libff::G1_precomp<ppT> vk_alphaB_g1_precomp;
+    libff::G2_precomp<ppT> vk_alphaC_g2_precomp;
+    libff::G2_precomp<ppT> vk_rC_Z_g2_precomp;
+    libff::G2_precomp<ppT> vk_gamma_g2_precomp;
+    libff::G1_precomp<ppT> vk_gamma_beta_g1_precomp;
+    libff::G2_precomp<ppT> vk_gamma_beta_g2_precomp;
+
+    accumulation_vector<libff::G1<ppT> > encoded_IC_query;
+
+    bool operator==(const r1cs_ppzksnark_processed_verification_key &other) const;
+    friend std::ostream& operator<< <ppT>(std::ostream &out, const r1cs_ppzksnark_processed_verification_key<ppT> &pvk);
+    friend std::istream& operator>> <ppT>(std::istream &in, r1cs_ppzksnark_processed_verification_key<ppT> &pvk);
+};
+
+/**
+ * Convert a (non-processed) verification key into a processed verification key.
+ */
+template<typename ppT>
+r1cs_ppzksnark_processed_verification_key<ppT> r1cs_ppzksnark_verifier_process_vk(const r1cs_ppzksnark_verification_key<ppT> &vk);
+
+
+template <typename ppT>
+r1cs_ppzksnark_processed_verification_key<ppT> r1cs_ppzksnark_verifier_process_vk(const r1cs_ppzksnark_verification_key<ppT> &vk)
+{
+    libff::enter_block("Call to r1cs_ppzksnark_verifier_process_vk");
+
+    r1cs_ppzksnark_processed_verification_key<ppT> pvk;
+    pvk.pp_G2_one_precomp        = ppT::precompute_G2(libff::G2<ppT>::one());
+    pvk.vk_alphaA_g2_precomp     = ppT::precompute_G2(vk.alphaA_g2);
+    pvk.vk_alphaB_g1_precomp     = ppT::precompute_G1(vk.alphaB_g1);
+    pvk.vk_alphaC_g2_precomp     = ppT::precompute_G2(vk.alphaC_g2);
+    pvk.vk_rC_Z_g2_precomp       = ppT::precompute_G2(vk.rC_Z_g2);
+    pvk.vk_gamma_g2_precomp      = ppT::precompute_G2(vk.gamma_g2);
+    pvk.vk_gamma_beta_g1_precomp = ppT::precompute_G1(vk.gamma_beta_g1);
+    pvk.vk_gamma_beta_g2_precomp = ppT::precompute_G2(vk.gamma_beta_g2);
+
+    pvk.encoded_IC_query = vk.encoded_IC_query;
+
+    libff::leave_block("Call to r1cs_ppzksnark_verifier_process_vk");
+
+    return pvk;
+}
+
+
+bn128_ate_G1_precomp bn128_pp::precompute_G1(const bn128_G1 &P)
+{
+    return bn128_ate_precompute_G1(P);
+}
+
+bn128_ate_G2_precomp bn128_pp::precompute_G2(const bn128_G2 &Q)
+{
+    return bn128_ate_precompute_G2(Q);
+}
+
+
+bn128_ate_G1_precomp bn128_ate_precompute_G1(const bn128_G1& P)
+{
+    enter_block("Call to bn128_ate_precompute_G1");
+
+    bn128_ate_G1_precomp result;
+    bn::ecop::NormalizeJac(result.P, P.coord);//将(x,y,z) |-> (x*z^2,y*z^3,1)，亦即将Jacobian Coordinates归一化。y^2 = x^3 + A*x*z^4 + B*z^6 |-> y^2 = x^3 + A*x + B
+
+    leave_block("Call to bn128_ate_precompute_G1");
+    return result;
+}
+
+bn128_ate_G2_precomp bn128_ate_precompute_G2(const bn128_G2& Q)
+{
+    enter_block("Call to bn128_ate_precompute_G2");
+
+    bn128_ate_G2_precomp result;
+    bn::components::precomputeG2(result.coeffs, result.Q, Q.coord);
+	/*
+	see https://github.com/herumi/ate-pairing/blob/master/test/bn.cpp 有例子
+	*/
+
+    leave_block("Call to bn128_ate_precompute_G2");
+    return result;
+}
+
+
+struct bn128_ate_G1_precomp {
+    bn::Fp P[3];
+
+    bool operator==(const bn128_ate_G1_precomp &other) const;
+    friend std::ostream& operator<<(std::ostream &out, const bn128_ate_G1_precomp &prec_P);
+    friend std::istream& operator>>(std::istream &in, bn128_ate_G1_precomp &prec_P);
+};
+
+typedef bn::Fp6 bn128_ate_ell_coeffs;
+/*
+	beta = -1
+	Fp2 = F[u] / (u^2 + 1)
+	x = a_ + b_ u
+*/
+/*
+	Fp6T = Fp2[v] / (v^3 - Xi), Xi = -u - 1
+	x = a_ + b_ v + c_ v^2
+*/
+
+struct bn128_ate_G2_precomp {
+    bn::Fp2 Q[3];
+    std::vector<bn128_ate_ell_coeffs> coeffs;
+
+    bool operator==(const bn128_ate_G2_precomp &other) const;
+    friend std::ostream& operator<<(std::ostream &out, const bn128_ate_G2_precomp &prec_Q);
+    friend std::istream& operator>>(std::istream &in, bn128_ate_G2_precomp &prec_Q);
+};
+
+
+template<class Fp2>
+void (*Fp6T<Fp2>::pointDblLineEvalWithoutP)(Fp6T<Fp2>& z, Fp2* x) = &(Fp6T<Fp2>::pointDblLineEvalWithoutPC);
+
+/*
+		Algorithm 11 in App.B of Aranha et al. ePrint 2010/526
+
+		NOTE:
+		The original version uses precomputed and stored value of -P[1].
+		But, we do not use that, this algorithm always calculates it.
+
+		input P[0..2], R[0..2]
+		R <- [2]R,
+		(l00, 0, l02, 0, l11, 0) = f_{R,R}(P),
+		l = (a,b,c) = (l00, l11, l02)
+		where P[2] == 1
+	*/
+	static void pointDblLineEvalWithoutPC(Fp6T& l, Fp2* R)
+	{
+		Fp2 t0, t1, t2, t3, t4, t5;
+		Fp2Dbl T0, T1, T2;
+		// X1, Y1, Z1 == R[0], R[1], R[2]
+		// xp, yp = P[0], P[1]
+
+		// # 1
+		Fp2::square(t0, R[2]);
+		Fp2::mul(t4, R[0], R[1]);
+		Fp2::square(t1, R[1]);
+		// # 2
+		Fp2::add(t3, t0, t0);
+		Fp2::divBy2(t4, t4);
+		Fp2::add(t5, t0, t1);
+		// # 3
+		t0 += t3;
+		// # 4
+#ifdef BN_SUPPORT_SNARK
+		if (ParamT<Fp2>::b == 82) {
+			// (a + bu) * (9 - u) = (9a + b) + (9b - a)u
+			t3.a_ = t0.b_;
+			t3.b_ = t0.a_;
+			Fp2::mul_xi(t0, t3);
+			t2.a_ = t0.b_;
+			t2.b_ = t0.a_;
+		} else {
+			// (a + bu) * binv_xi
+			Fp2::mul(t2, t0, ParamT<Fp2>::b_invxi);
+		}
+#else
+		// (a + bu)(1 - u) = (a + b) + (b - a)u
+		Fp::add(t2.a_, t0.a_, t0.b_);
+		Fp::sub(t2.b_, t0.b_, t0.a_);
+#endif
+		// # 5
+		Fp2::square(t0, R[0]);
+		Fp2::add(t3, t2, t2);
+		// ## 6
+		t3 += t2;
+		Fp2::addNC(l.c_, t0, t0);
+		// ## 7
+		Fp2::sub(R[0], t1, t3);
+		Fp2::addNC(l.c_, l.c_, t0);
+		t3 += t1;
+		// # 8
+		R[0] *= t4;
+		Fp2::divBy2(t3, t3);
+		// ## 9
+		Fp2Dbl::square(T0, t3);
+		Fp2Dbl::square(T1, t2);
+		// # 10
+		Fp2Dbl::addNC(T2, T1, T1);
+		Fp2::add(t3, R[1], R[2]);
+		// # 11
+#ifdef BN_SUPPORT_SNARK
+		Fp2Dbl::add(T2, T2, T1);
+#else
+		Fp2Dbl::addNC(T2, T2, T1);
+#endif
+		Fp2::square(t3, t3);
+		// # 12
+		t3 -= t5;
+		// # 13
+		T0 -= T2;
+		// # 14
+		Fp2Dbl::mod(R[1], T0);
+		Fp2::mul(R[2], t1, t3);
+		t2 -= t1;
+		// # 15
+		Fp2::mul_xi(l.a_, t2);
+		Fp2::neg(l.b_, t3);
+	}
+
+```
