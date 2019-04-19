@@ -1,0 +1,347 @@
+struct Fp2T : public mie::local::addsubmul<Fp2T<T>
+		, mie::local::hasNegative<Fp2T<T> > > 
+中有定义如下结构体：
+```
+struct Dbl : public mie::local::addsubmul<Dbl, mie::local::hasNegative<Dbl> > {
+		typedef typename Fp::Dbl FpDbl;
+		enum { SIZE = FpDbl::SIZE * 2 };
+
+		FpDbl a_, b_;
+
+		std::string toString(int base = 10) const
+		{
+			return ("[" + a_.toString(base) + "," + b_.toString(base) + "]");
+		}
+		friend inline std::ostream& operator<<(std::ostream& os, const Dbl& x)
+		{
+			return os << x.toString();
+		}
+
+		Dbl() { }
+		Dbl(const Fp2T& x)
+			: a_(x.a_)
+			, b_(x.b_)
+		{
+		}
+		Dbl(const Fp& a, const Fp& b)
+			: a_(a)
+			, b_(b)
+		{
+		}
+		Dbl(const FpDbl& a, const FpDbl& b)
+			: a_(a)
+			, b_(b)
+		{
+		}
+		Dbl(const std::string& a, const std::string& b)
+			: a_(a)
+			, b_(b)
+		{
+		}
+
+		void setDirect(const mie::Vuint& a, const mie::Vuint& b)
+		{
+			FpDbl::setDirect(a_, a);
+			FpDbl::setDirect(b_, b);
+		}
+		void setDirect(const FpDbl& a, const FpDbl& b)
+		{
+			a_ = a;
+			b_ = b;
+		}
+		FpDbl* get() { return &a_; }
+		const FpDbl* get() const { return &a_; }
+		void clear()
+		{
+			a_.clear();
+			b_.clear();
+		}
+		bool isZero() const
+		{
+			return a_.isZero() && b_.isZero();
+		}
+
+		friend inline bool operator==(const Dbl& x, const Dbl& y)
+		{
+			return x.a_ == y.a_ && x.b_ == y.b_;
+		}
+		friend inline bool operator!=(const Dbl& x, const Dbl& y) { return !(x == y); }
+
+		typedef void (uni_op)(Dbl&, const Dbl&);
+		typedef void (bin_op)(Dbl&, const Dbl&, const Dbl&);
+
+		static bin_op* add;
+		static bin_op* addNC;
+		static uni_op* neg;
+		static bin_op* sub;
+		static bin_op* subNC;
+
+		static void (*mulOpt1)(Dbl& z, const Fp2T& x, const Fp2T& y);
+		static void (*mulOpt2)(Dbl& z, const Fp2T& x, const Fp2T& y);
+		static void (*square)(Dbl& z, const Fp2T& x);
+		static void (*mod)(Fp2T& z, const Dbl& x);
+
+		static uni_op* mul_xi;
+
+		static void addC(Dbl& z, const Dbl& x, const Dbl& y)
+		{
+			FpDbl::add(z.a_, x.a_, y.a_);
+			FpDbl::add(z.b_, x.b_, y.b_);
+		}
+
+		static void addNC_C(Dbl& z, const Dbl& x, const Dbl& y)
+		{
+			FpDbl::addNC(z.a_, x.a_, y.a_);
+			FpDbl::addNC(z.b_, x.b_, y.b_);
+		}
+
+		static void negC(Dbl& z, const Dbl& x)
+		{
+			FpDbl::neg(z.a_, x.a_);
+			FpDbl::neg(z.b_, x.b_);
+		}
+
+		static void subC(Dbl& z, const Dbl& x, const Dbl& y)
+		{
+			FpDbl::sub(z.a_, x.a_, y.a_);
+			FpDbl::sub(z.b_, x.b_, y.b_);
+		}
+
+		static void subNC_C(Dbl& z, const Dbl& x, const Dbl& y)
+		{
+			FpDbl::subNC(z.a_, x.a_, y.a_);
+			FpDbl::subNC(z.b_, x.b_, y.b_);
+		}
+
+#ifdef BN_SUPPORT_SNARK
+		/*
+			XITAG
+			u^2 = -1
+			xi = 9 + u
+			(a + bu)(9 + u) = (9a - b) + (a + 9b)u
+		*/
+		static void mul_xiC(Dbl& z, const Dbl& x)
+		{
+			assert(&z != &x);
+			FpDbl::add(z.a_, x.a_, x.a_); // 2
+			FpDbl::add(z.a_, z.a_, z.a_); // 4
+			FpDbl::add(z.a_, z.a_, z.a_); // 8
+			FpDbl::add(z.a_, z.a_, x.a_); // 9
+			FpDbl::sub(z.a_, z.a_, x.b_);
+
+			FpDbl::add(z.b_, x.b_, x.b_); // 2
+			FpDbl::add(z.b_, z.b_, z.b_); // 4
+			FpDbl::add(z.b_, z.b_, z.b_); // 8
+			FpDbl::add(z.b_, z.b_, x.b_); // 9
+			FpDbl::add(z.b_, z.b_, x.a_);
+		}
+#else
+		static void mul_xiC(Dbl& z, const Dbl& x)
+		{
+			assert(&z != &x);
+			FpDbl::sub(z.a_, x.a_, x.b_);
+			FpDbl::add(z.b_, x.b_, x.a_);
+		}
+#endif
+
+		static void mulOptC(Dbl& z, const Fp2T& x, const Fp2T& y, int mode)
+		{
+			FpDbl d0;
+			Fp s, t;
+			Fp::addNC(s, x.a_, x.b_);
+			Fp::addNC(t, y.a_, y.b_);
+			FpDbl::mul(d0, x.b_, y.b_);
+			FpDbl::mul(z.a_, x.a_, y.a_);
+			FpDbl::mul(z.b_, s, t);
+			FpDbl::subNC(z.b_, z.b_, z.a_);
+			FpDbl::subNC(z.b_, z.b_, d0);
+
+			if (mode == 1) {
+				FpDbl::subOpt1(z.a_, z.a_, d0);
+
+			} else {
+				FpDbl::sub(z.a_, z.a_, d0);
+			}
+		}
+
+		static void mulOpt1C(Dbl& z, const Fp2T& x, const Fp2T& y)
+		{
+			mulOptC(z, x, y, 1);
+		}
+
+		static void mulOpt2C(Dbl& z, const Fp2T& x, const Fp2T& y)
+		{
+			mulOptC(z, x, y, 2);
+		}
+
+		static void squareC(Dbl& z, const Fp2T& x)
+		{
+			Fp t0, t1;
+			Fp::addNC(t0, x.b_, x.b_);
+			FpDbl::mul(z.b_, t0, x.a_);
+			Fp::addNC(t1, x.a_, Fp::getDirectP(1)); // RRR
+			Fp::subNC(t1, t1, x.b_);
+			Fp::addNC(t0, x.a_, x.b_);
+			FpDbl::mul(z.a_, t0, t1);
+		}
+
+		static void modC(Fp2T& z, const Dbl& x)
+		{
+			FpDbl::mod(z.a_, x.a_);
+			FpDbl::mod(z.b_, x.b_);
+		}
+	};
+```
+template<class Fp>
+void (*Fp2T<Fp>::square)(Fp2T<Fp>& out, const Fp2T<Fp>& x) = &(Fp2T<Fp>::squareC);
+template<class Fp>
+void (*Fp2T<Fp>::mul)(Fp2T<Fp>& out, const Fp2T<Fp>& x, const Fp2T<Fp>& y) = &(Fp2T<Fp>::mulC);
+
+对应的struct Fp2T中有：
+```
+/*
+		(a + bu)^2 = (a - b)(a + b) + 2abu
+	*/
+	static inline void squareC(Fp2T& z, const Fp2T& x)
+	{
+#ifdef BN_SUPPORT_SNARK
+		Fp t, tt;
+		Fp::add(t, x.b_, x.b_); // 2b
+		t *= x.a_; // 2ab
+		Fp::sub(tt, x.a_, x.b_); // a - b
+		Fp::add(z.a_, x.a_, x.b_); // a + b //无NC标志的，是对结果做了mod p操作。
+		z.a_ *= tt; // (a - b)(a + b)
+		z.b_ = t;
+#else
+		Fp t, tt;
+		Fp::addNC(t, x.b_, x.b_); // 2b
+		t *= x.a_; // 2ab
+		Fp::sub(tt, x.a_, x.b_); // a - b
+		Fp::addNC(z.a_, x.a_, x.a_); // a + b //函数名后有NC标志的，是未对结果做module操作；无NC标志的，是对结果做了mod p操作。
+		z.a_ *= tt; // (a - b)(a + b)
+		z.b_ = t;
+#endif
+	}
+	
+/*
+		(a + b u)(c + d u) = (a c - b d) + (a d + b c)u
+		 = (a c - b d) + ((a + b)(c + d) - a c - b d)u
+		N = 1 << 256
+		7p < N then 7(p-1)(p-1) < pN
+	*/
+	static inline void mulC(Fp2T& z, const Fp2T& x, const Fp2T& y)
+	{
+		typename Fp::Dbl d[3];
+		Fp s, t;
+		Fp::addNC(s, x.a_, x.b_); // a + b
+		Fp::addNC(t, y.a_, y.b_); // c + d
+		Fp::Dbl::mul(d[0], s, t); // (a + b)(c + d)
+		Fp::Dbl::mul(d[1], x.a_, y.a_); // ac
+		Fp::Dbl::mul(d[2], x.b_, y.b_); // bd
+		Fp::Dbl::subNC(d[0], d[0], d[1]); // (a + b)(c + d) - ac
+		Fp::Dbl::subNC(d[0], d[0], d[2]); // (a + b)(c + d) - ac - bd
+		Fp::Dbl::mod(z.b_, d[0]); // set z[1]
+		Fp::Dbl::sub(d[1], d[1], d[2]); // ac - bd
+		Fp::Dbl::mod(z.a_, d[1]); // set z[0]
+	}
+
+```
+
+void (*Fp::add)(Fp& out, const Fp& x, const Fp& y) = &Fp_addC;
+void (*Fp::addNC)(Fp& out, const Fp& x, const Fp& y) = &Fp_addNC_C;
+void (*Fp::subNC)(Fp& out, const Fp& x, const Fp& y) = &Fp_subNC_C;
+void (*Fp::sub)(Fp& out, const Fp& x, const Fp& y) = &Fp_subC;
+void (*Fp::neg)(Fp& out, const Fp& x) = &Fp_negC;
+```
+static Fp *s_pTbl;
+Fp *Fp::halfTbl_;
+Fp *Fp::quarterTbl_;
+bn::FpDbl *bn::FpDbl::pNTbl_;
+
+typedef mie::ZmZ<mie::Vuint, Fp> Fp_emu;
+
+static inline void Fp_addC(Fp& out, const Fp& x, const Fp& y)
+{
+	static const mie::Vuint p(&s_pTbl[1][0], Fp::N);
+	mie::Vuint a(&x[0], Fp::N), b(&y[0], Fp::N);
+	a += b;
+	if (a >= p) {
+		a -= p;
+	}
+	Fp::setDirect(out, a);
+}
+
+static inline void Fp_addNC_C(Fp& out, const Fp& x, const Fp& y)
+{
+	mie::Vuint a(&x[0], Fp::N), b(&y[0], Fp::N);
+	a += b;
+	Fp::setDirect(out, a);
+}
+
+static inline void Fp_subNC_C(Fp& out, const Fp& x, const Fp& y)
+{
+	mie::Vuint a(&x[0], Fp::N), b(&y[0], Fp::N);
+	a -= b;
+	Fp::setDirect(out, a);
+}
+
+static inline void Fp_subC(Fp& out, const Fp& x, const Fp& y)
+{
+	static const mie::Vuint p(&s_pTbl[1][0], Fp::N);
+	mie::Vuint a(&x[0], Fp::N), b(&y[0], Fp::N);
+	if (a < b) {
+		a = a + p - b;
+	} else {
+		a -= p;
+	}
+	Fp::setDirect(out, a);
+}
+static void Fp_negC(Fp& out, const Fp& x)
+{
+	static const Fp zero(0);
+	Fp::sub(out, zero, x);
+}
+```
+
+zm2.cpp中有
+void (*FpDbl::mul)(Dbl&, const Fp&, const Fp&) = &FpDbl_mulC;
+void (*FpDbl::mod)(Fp&, const Dbl&) = &FpDbl_modC;
+
+```
+static void FpDbl_modC(Fp& out, const FpDbl& x)
+{
+	const size_t UnitLen = sizeof(mie::Unit) * 8;
+	mie::Vuint c(x.const_ptr(), Fp::N * 2);
+	const mie::Vuint& p =Fp::getModulo();
+
+	const size_t n = 256 / UnitLen;
+	for (size_t i = 0; i < n; i++) {
+		mie::Unit u = c[0];
+		mie::Unit q = u * pp_mont;
+		c += q * p;
+		c >>= UnitLen;
+	}
+	if (c >= p) {
+		c -= p;
+	}
+	Fp::setDirect(out, c);
+}
+```
+
+
+```
+/*
+	Fp6T = Fp2[v] / (v^3 - Xi), Xi = -u - 1
+	x = a_ + b_ v + c_ v^2
+*/
+template<class T>
+struct Fp6T : public mie::local::addsubmul<Fp6T<T>,
+		mie::local::hasNegative<Fp6T<T> > > {
+	typedef T Fp2;
+	typedef typename T::Fp Fp;
+	typedef ParamT<Fp2> Param;
+	typedef typename Fp2::Dbl Fp2Dbl;
+	Fp2 a_, b_, c_;
+};
+```
+

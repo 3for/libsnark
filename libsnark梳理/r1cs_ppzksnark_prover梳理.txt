@@ -1,0 +1,376 @@
+r1cs_ppzksnark_proof<ppT> proof = r1cs_ppzksnark_prover<ppT>(keypair.pk, example.primary_input, example.auxiliary_input);
+  
+```
+template <typename ppT>
+r1cs_ppzksnark_proof<ppT> r1cs_ppzksnark_prover(const r1cs_ppzksnark_proving_key<ppT> &pk,
+                                                const r1cs_ppzksnark_primary_input<ppT> &primary_input,
+                                                const r1cs_ppzksnark_auxiliary_input<ppT> &auxiliary_input)
+{
+    libff::enter_block("Call to r1cs_ppzksnark_prover");
+
+#ifdef DEBUG
+    assert(pk.constraint_system.is_satisfied(primary_input, auxiliary_input));
+#endif
+
+    const libff::Fr<ppT> d1 = libff::Fr<ppT>::random_element(),
+        d2 = libff::Fr<ppT>::random_element(),
+        d3 = libff::Fr<ppT>::random_element();
+
+    libff::enter_block("Compute the polynomial H");
+    const qap_witness<libff::Fr<ppT> > qap_wit = r1cs_to_qap_witness_map(pk.constraint_system, primary_input, auxiliary_input, d1, d2, d3);
+    libff::leave_block("Compute the polynomial H");
+
+#ifdef DEBUG
+    const libff::Fr<ppT> t = libff::Fr<ppT>::random_element();
+    qap_instance_evaluation<libff::Fr<ppT> > qap_inst = r1cs_to_qap_instance_map_with_evaluation(pk.constraint_system, t);
+    assert(qap_inst.is_satisfied(qap_wit));
+#endif
+
+    knowledge_commitment<libff::G1<ppT>, libff::G1<ppT> > g_A = pk.A_query[0] + qap_wit.d1*pk.A_query[qap_wit.num_variables()+1];
+    knowledge_commitment<libff::G2<ppT>, libff::G1<ppT> > g_B = pk.B_query[0] + qap_wit.d2*pk.B_query[qap_wit.num_variables()+1];
+    knowledge_commitment<libff::G1<ppT>, libff::G1<ppT> > g_C = pk.C_query[0] + qap_wit.d3*pk.C_query[qap_wit.num_variables()+1];
+
+    libff::G1<ppT> g_H = libff::G1<ppT>::zero();
+    libff::G1<ppT> g_K = (pk.K_query[0] +
+                   qap_wit.d1*pk.K_query[qap_wit.num_variables()+1] +
+                   qap_wit.d2*pk.K_query[qap_wit.num_variables()+2] +
+                   qap_wit.d3*pk.K_query[qap_wit.num_variables()+3]);
+
+#ifdef DEBUG
+    for (size_t i = 0; i < qap_wit.num_inputs() + 1; ++i)
+    {
+        assert(pk.A_query[i].g == libff::G1<ppT>::zero());
+    }
+    assert(pk.A_query.domain_size() == qap_wit.num_variables()+2);
+    assert(pk.B_query.domain_size() == qap_wit.num_variables()+2);
+    assert(pk.C_query.domain_size() == qap_wit.num_variables()+2);
+    assert(pk.H_query.size() == qap_wit.degree()+1);
+    assert(pk.K_query.size() == qap_wit.num_variables()+4);
+#endif
+
+#ifdef MULTICORE
+    const size_t chunks = omp_get_max_threads(); // to override, set OMP_NUM_THREADS env var or call omp_set_num_threads()
+#else
+    const size_t chunks = 1;
+#endif
+
+    libff::enter_block("Compute the proof");
+
+    libff::enter_block("Compute answer to A-query", false);
+    g_A = g_A + kc_multi_exp_with_mixed_addition<libff::G1<ppT>,
+                                                 libff::G1<ppT>,
+                                                 libff::Fr<ppT>,
+                                                 libff::multi_exp_method_bos_coster>(
+        pk.A_query,
+        1, 1+qap_wit.num_variables(),
+        qap_wit.coefficients_for_ABCs.begin(), qap_wit.coefficients_for_ABCs.begin()+qap_wit.num_variables(),
+        chunks);
+    libff::leave_block("Compute answer to A-query", false);
+
+    libff::enter_block("Compute answer to B-query", false);
+    g_B = g_B + kc_multi_exp_with_mixed_addition<libff::G2<ppT>,
+                                                 libff::G1<ppT>,
+                                                 libff::Fr<ppT>,
+                                                 libff::multi_exp_method_bos_coster>(
+        pk.B_query,
+        1, 1+qap_wit.num_variables(),
+        qap_wit.coefficients_for_ABCs.begin(), qap_wit.coefficients_for_ABCs.begin()+qap_wit.num_variables(),
+        chunks);
+    libff::leave_block("Compute answer to B-query", false);
+
+    libff::enter_block("Compute answer to C-query", false);
+    g_C = g_C + kc_multi_exp_with_mixed_addition<libff::G1<ppT>,
+                                                 libff::G1<ppT>,
+                                                 libff::Fr<ppT>,
+                                                 libff::multi_exp_method_bos_coster>(
+        pk.C_query,
+        1, 1+qap_wit.num_variables(),
+        qap_wit.coefficients_for_ABCs.begin(), qap_wit.coefficients_for_ABCs.begin()+qap_wit.num_variables(),
+        chunks);
+    libff::leave_block("Compute answer to C-query", false);
+
+    libff::enter_block("Compute answer to H-query", false);
+    g_H = g_H + libff::multi_exp<libff::G1<ppT>,
+                                 libff::Fr<ppT>,
+                                 libff::multi_exp_method_BDLO12>(
+        pk.H_query.begin(), pk.H_query.begin()+qap_wit.degree()+1,
+        qap_wit.coefficients_for_H.begin(), qap_wit.coefficients_for_H.begin()+qap_wit.degree()+1,
+        chunks);
+    libff::leave_block("Compute answer to H-query", false);
+
+    libff::enter_block("Compute answer to K-query", false);
+    g_K = g_K + libff::multi_exp_with_mixed_addition<libff::G1<ppT>,
+                                                     libff::Fr<ppT>,
+                                                     libff::multi_exp_method_bos_coster>(
+        pk.K_query.begin()+1, pk.K_query.begin()+1+qap_wit.num_variables(),
+        qap_wit.coefficients_for_ABCs.begin(), qap_wit.coefficients_for_ABCs.begin()+qap_wit.num_variables(),
+        chunks);
+    libff::leave_block("Compute answer to K-query", false);
+
+    libff::leave_block("Compute the proof");
+
+    libff::leave_block("Call to r1cs_ppzksnark_prover");
+
+    r1cs_ppzksnark_proof<ppT> proof = r1cs_ppzksnark_proof<ppT>(std::move(g_A), std::move(g_B), std::move(g_C), std::move(g_H), std::move(g_K));
+    proof.print_size();
+
+    return proof;
+}
+```
+
+```
+template<typename FieldT>
+bool r1cs_constraint_system<FieldT>::is_satisfied(const r1cs_primary_input<FieldT> &primary_input,
+                                                  const r1cs_auxiliary_input<FieldT> &auxiliary_input) const
+{
+    assert(primary_input.size() == num_inputs());
+    assert(primary_input.size() + auxiliary_input.size() == num_variables());
+
+    r1cs_variable_assignment<FieldT> full_variable_assignment = primary_input;
+    full_variable_assignment.insert(full_variable_assignment.end(), auxiliary_input.begin(), auxiliary_input.end());
+
+    for (size_t c = 0; c < constraints.size(); ++c)
+    {
+        const FieldT ares = constraints[c].a.evaluate(full_variable_assignment); //add sum for coeff_i*a_i
+        const FieldT bres = constraints[c].b.evaluate(full_variable_assignment);
+        const FieldT cres = constraints[c].c.evaluate(full_variable_assignment);
+
+        if (!(ares*bres == cres)) //check if < A , X > * < B , X > = < C , X >
+        {
+#ifdef DEBUG
+            auto it = constraint_annotations.find(c);
+            printf("constraint %zu (%s) unsatisfied\n", c, (it == constraint_annotations.end() ? "no annotation" : it->second.c_str()));
+            printf("<a,(1,x)> = "); ares.print();
+            printf("<b,(1,x)> = "); bres.print();
+            printf("<c,(1,x)> = "); cres.print();
+            printf("constraint was:\n");
+            dump_r1cs_constraint(constraints[c], full_variable_assignment, variable_annotations);
+#endif // DEBUG
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
+template<typename FieldT>
+FieldT linear_combination<FieldT>::evaluate(const std::vector<FieldT> &assignment) const
+{
+    FieldT acc = FieldT::zero();
+    for (auto &lt : terms)
+    {
+        acc += (lt.index == 0 ? FieldT::one() : assignment[lt.index-1]) * lt.coeff;
+    }
+    return acc;
+}
+
+/**
+ * A QAP witness.
+ */
+template<typename FieldT>
+class qap_witness {
+private:
+    size_t num_variables_;
+    size_t degree_;
+    size_t num_inputs_;
+
+public:
+    FieldT d1, d2, d3;
+
+    std::vector<FieldT> coefficients_for_ABCs;
+    std::vector<FieldT> coefficients_for_H;
+
+    qap_witness(const size_t num_variables,
+                const size_t degree,
+                const size_t num_inputs,
+                const FieldT &d1,
+                const FieldT &d2,
+                const FieldT &d3,
+                const std::vector<FieldT> &coefficients_for_ABCs,
+                const std::vector<FieldT> &coefficients_for_H);
+
+    qap_witness(const size_t num_variables,
+                const size_t degree,
+                const size_t num_inputs,
+                const FieldT &d1,
+                const FieldT &d2,
+                const FieldT &d3,
+                const std::vector<FieldT> &coefficients_for_ABCs,
+                std::vector<FieldT> &&coefficients_for_H);
+
+    qap_witness(const qap_witness<FieldT> &other) = default;
+    qap_witness(qap_witness<FieldT> &&other) = default;
+    qap_witness& operator=(const qap_witness<FieldT> &other) = default;
+    qap_witness& operator=(qap_witness<FieldT> &&other) = default;
+
+    size_t num_variables() const;
+    size_t degree() const;
+    size_t num_inputs() const;
+};
+
+/**
+ * Witness map for the R1CS-to-QAP reduction.
+ *
+ * The witness map takes zero knowledge into account when d1,d2,d3 are random.
+ */
+ /**
+ * Witness map for the R1CS-to-QAP reduction.
+ *
+ * The witness map takes zero knowledge into account when d1,d2,d3 are random.
+ *
+ * More precisely, compute the coefficients
+ *     h_0,h_1,...,h_n
+ * of the polynomial
+ *     H(z) := (A(z)*B(z)-C(z))/Z(z)
+ * where
+ *   A(z) := A_0(z) + \sum_{k=1}^{m} w_k A_k(z) + d1 * Z(z)
+ *   B(z) := B_0(z) + \sum_{k=1}^{m} w_k B_k(z) + d2 * Z(z)
+ *   C(z) := C_0(z) + \sum_{k=1}^{m} w_k C_k(z) + d3 * Z(z)
+ *   Z(z) := "vanishing polynomial of set S"
+ * and
+ *   m = number of variables of the QAP
+ *   n = degree of the QAP
+ *
+ * This is done as follows:
+ *  (1) compute evaluations of A,B,C on S = {sigma_1,...,sigma_n}
+ *  (2) compute coefficients of A,B,C
+ *  (3) compute evaluations of A,B,C on T = "coset of S"
+ *  (4) compute evaluation of H on T
+ *  (5) compute coefficients of H
+ *  (6) patch H to account for d1,d2,d3 (i.e., add coefficients of the polynomial (A d2 + B d1 - d3) + d1*d2*Z )
+ *
+ * The code below is not as simple as the above high-level description due to
+ * some reshuffling to save space.
+ */
+template<typename FieldT>
+qap_witness<FieldT> r1cs_to_qap_witness_map(const r1cs_constraint_system<FieldT> &cs,
+                                            const r1cs_primary_input<FieldT> &primary_input,
+                                            const r1cs_auxiliary_input<FieldT> &auxiliary_input,
+                                            const FieldT &d1,
+                                            const FieldT &d2,
+                                            const FieldT &d3)
+{
+    libff::enter_block("Call to r1cs_to_qap_witness_map");
+
+    /* sanity check */
+    assert(cs.is_satisfied(primary_input, auxiliary_input));
+
+    const std::shared_ptr<libfqfft::evaluation_domain<FieldT> > domain = libfqfft::get_evaluation_domain<FieldT>(cs.num_constraints() + cs.num_inputs() + 1);
+
+    r1cs_variable_assignment<FieldT> full_variable_assignment = primary_input;
+    full_variable_assignment.insert(full_variable_assignment.end(), auxiliary_input.begin(), auxiliary_input.end());
+
+    libff::enter_block("Compute evaluation of polynomials A, B on set S");
+    std::vector<FieldT> aA(domain->m, FieldT::zero()), aB(domain->m, FieldT::zero());
+
+    /* account for the additional constraints input_i * 0 = 0 */
+    for (size_t i = 0; i <= cs.num_inputs(); ++i) //100
+    {
+        aA[i+cs.num_constraints()] = (i > 0 ? full_variable_assignment[i-1] : FieldT::one());
+    }
+    /* account for all other constraints */
+    for (size_t i = 0; i < cs.num_constraints(); ++i) //1000
+    {
+        aA[i] += cs.constraints[i].a.evaluate(full_variable_assignment);
+        aB[i] += cs.constraints[i].b.evaluate(full_variable_assignment);
+    }
+    libff::leave_block("Compute evaluation of polynomials A, B on set S");
+
+    libff::enter_block("Compute coefficients of polynomial A");
+    domain->iFFT(aA);
+    libff::leave_block("Compute coefficients of polynomial A");
+
+    libff::enter_block("Compute coefficients of polynomial B");
+    domain->iFFT(aB);
+    libff::leave_block("Compute coefficients of polynomial B");
+
+    libff::enter_block("Compute ZK-patch");
+    std::vector<FieldT> coefficients_for_H(domain->m+1, FieldT::zero());
+#ifdef MULTICORE
+#pragma omp parallel for
+#endif
+    /* add coefficients of the polynomial (d2*A + d1*B - d3) + d1*d2*Z */
+    for (size_t i = 0; i < domain->m; ++i)
+    {
+        coefficients_for_H[i] = d2*aA[i] + d1*aB[i];
+    }
+    coefficients_for_H[0] -= d3;
+    domain->add_poly_Z(d1*d2, coefficients_for_H);
+    libff::leave_block("Compute ZK-patch");
+
+    libff::enter_block("Compute evaluation of polynomial A on set T");
+    domain->cosetFFT(aA, FieldT::multiplicative_generator);
+    libff::leave_block("Compute evaluation of polynomial A on set T");
+
+    libff::enter_block("Compute evaluation of polynomial B on set T");
+    domain->cosetFFT(aB, FieldT::multiplicative_generator);
+    libff::leave_block("Compute evaluation of polynomial B on set T");
+
+    libff::enter_block("Compute evaluation of polynomial H on set T");
+    std::vector<FieldT> &H_tmp = aA; // can overwrite aA because it is not used later
+#ifdef MULTICORE
+#pragma omp parallel for
+#endif
+    for (size_t i = 0; i < domain->m; ++i)
+    {
+        H_tmp[i] = aA[i]*aB[i];
+    }
+    std::vector<FieldT>().swap(aB); // destroy aB
+
+    libff::enter_block("Compute evaluation of polynomial C on set S");
+    std::vector<FieldT> aC(domain->m, FieldT::zero());
+    for (size_t i = 0; i < cs.num_constraints(); ++i)
+    {
+        aC[i] += cs.constraints[i].c.evaluate(full_variable_assignment);
+    }
+    libff::leave_block("Compute evaluation of polynomial C on set S");
+
+    libff::enter_block("Compute coefficients of polynomial C");
+    domain->iFFT(aC);
+    libff::leave_block("Compute coefficients of polynomial C");
+
+    libff::enter_block("Compute evaluation of polynomial C on set T");
+    domain->cosetFFT(aC, FieldT::multiplicative_generator);
+    libff::leave_block("Compute evaluation of polynomial C on set T");
+
+#ifdef MULTICORE
+#pragma omp parallel for
+#endif
+    for (size_t i = 0; i < domain->m; ++i)
+    {
+        H_tmp[i] = (H_tmp[i]-aC[i]);
+    }
+
+    libff::enter_block("Divide by Z on set T");
+    domain->divide_by_Z_on_coset(H_tmp);
+    libff::leave_block("Divide by Z on set T");
+
+    libff::leave_block("Compute evaluation of polynomial H on set T");
+
+    libff::enter_block("Compute coefficients of polynomial H");
+    domain->icosetFFT(H_tmp, FieldT::multiplicative_generator);
+    libff::leave_block("Compute coefficients of polynomial H");
+
+    libff::enter_block("Compute sum of H and ZK-patch");
+#ifdef MULTICORE
+#pragma omp parallel for
+#endif
+    for (size_t i = 0; i < domain->m; ++i)
+    {
+        coefficients_for_H[i] += H_tmp[i];
+    }
+    libff::leave_block("Compute sum of H and ZK-patch");
+
+    libff::leave_block("Call to r1cs_to_qap_witness_map");
+
+    return qap_witness<FieldT>(cs.num_variables(),
+                               domain->m,
+                               cs.num_inputs(),
+                               d1,
+                               d2,
+                               d3,
+                               full_variable_assignment,
+                               std::move(coefficients_for_H));
+}
+```

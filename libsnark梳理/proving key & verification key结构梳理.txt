@@ -313,6 +313,68 @@ bn128_ate_G2_precomp bn128_ate_precompute_G2(const bn128_G2& Q)
     return result;
 }
 
+/*
+	inQ[3] : permit not-normalized
+*/
+inline void precomputeG2(std::vector<Fp6>& coeff, Fp2 Q[3], const Fp2 inQ[3])
+{
+	coeff.clear();
+	bn::ecop::NormalizeJac(Q, inQ); //将(x,y,z) |-> (x*z^2,y*z^3,1)，亦即将Jacobian Coordinates归一化。y^2 = x^3 + A*x*z^4 + B*z^6 |-> y^2 = x^3 + A*x + B
+
+	Fp2 T[3];
+	T[0] = Q[0];
+	T[1] = Q[1];
+	T[2] = Fp2(1);
+	Fp2 Qneg[2];
+	if (Param::useNAF) { //为true
+		Qneg[0] = Q[0];
+		Fp2::neg(Qneg[1], Q[1]);
+	}
+
+	Fp6 d;
+	Fp6::pointDblLineEvalWithoutP(d, T);
+	coeff.push_back(d);
+
+	Fp6 e;
+	assert(Param::siTbl[1] == 1);
+	Fp6::pointAddLineEvalWithoutP(e, T, Q);
+	coeff.push_back(e);
+
+	bn::Fp6 l;
+	// 844kclk
+	for (size_t i = 2; i < Param::siTbl.size(); i++) {
+		Fp6::pointDblLineEvalWithoutP(l, T);
+		coeff.push_back(l);
+
+		if (Param::siTbl[i] > 0) {
+			Fp6::pointAddLineEvalWithoutP(l, T, Q);
+			coeff.push_back(l);
+		}
+		else if (Param::siTbl[i] < 0) {
+			Fp6::pointAddLineEvalWithoutP(l, T, Qneg);
+			coeff.push_back(l);
+		}
+	}
+
+	// addition step
+	Fp2 Q1[2];
+	bn::ecop::FrobEndOnTwist_1(Q1, Q);//(x,y)->(x^q,y^q)
+	Fp2 Q2[2];
+#ifdef BN_SUPPORT_SNARK
+	bn::ecop::FrobEndOnTwist_2(Q2, Q);//(x,y)->(x^(q^2),y^(q^2))
+	Fp2::neg(Q2[1], Q2[1]);
+#else
+	// @memo z < 0
+	ecop::FrobEndOnTwist_8(Q2, Q);
+	Fp2::neg(T[1], T[1]);
+#endif
+
+	Fp6::pointAddLineEvalWithoutP(d, T, Q1);
+	coeff.push_back(d);
+
+	Fp6::pointAddLineEvalWithoutP(e, T, Q2);
+	coeff.push_back(e);
+}
 
 struct bn128_ate_G1_precomp {
     bn::Fp P[3];
@@ -343,9 +405,13 @@ struct bn128_ate_G2_precomp {
 };
 
 
+typedef typename Fp2::Dbl Fp2Dbl;
+
+
 template<class Fp2>
 void (*Fp6T<Fp2>::pointDblLineEvalWithoutP)(Fp6T<Fp2>& z, Fp2* x) = &(Fp6T<Fp2>::pointDblLineEvalWithoutPC);
-
+ //zouyudi.有withoutP(make_pointDblLineEval(true);)，即只计算线的斜率。无without(make_pointDblLineEval(false);)，则计算整条线公式：y=lamda*x+b.
+ //计算tangent线时，x3=lamda^2-2*x;
 /*
 		Algorithm 11 in App.B of Aranha et al. ePrint 2010/526
 
@@ -386,7 +452,7 @@ void (*Fp6T<Fp2>::pointDblLineEvalWithoutP)(Fp6T<Fp2>& z, Fp2* x) = &(Fp6T<Fp2>:
 			t2.a_ = t0.b_;
 			t2.b_ = t0.a_;
 		} else {
-			// (a + bu) * binv_xi
+			// (a + bu) * binv_xi  //b_invxi = b / xi
 			Fp2::mul(t2, t0, ParamT<Fp2>::b_invxi);
 		}
 #else
