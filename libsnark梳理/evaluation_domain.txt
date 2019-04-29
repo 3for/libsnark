@@ -183,4 +183,72 @@ public:
 };
  
  
- 
+template<typename FieldT>
+std::vector<FieldT> basic_radix2_domain<FieldT>::evaluate_all_lagrange_polynomials(const FieldT &t)
+{
+    return _basic_radix2_evaluate_all_lagrange_polynomials(this->m, t);
+}
+
+/**
+ * Compute the m Lagrange coefficients, relative to the set S={omega^{0},...,omega^{m-1}}, at the field element t.
+ */
+template<typename FieldT>
+std::vector<FieldT> _basic_radix2_evaluate_all_lagrange_polynomials(const size_t m, const FieldT &t); 
+
+template<typename FieldT>
+std::vector<FieldT> _basic_radix2_evaluate_all_lagrange_polynomials(const size_t m, const FieldT &t)
+{
+    if (m == 1)
+    {
+        return std::vector<FieldT>(1, FieldT::one());
+    }
+
+    if (m != (1u << libff::log2(m))) throw DomainSizeException("expected m == (1u << log2(m))");
+
+    const FieldT omega = libff::get_root_of_unity<FieldT>(m);
+
+    std::vector<FieldT> u(m, FieldT::zero());
+
+    /*
+     If t equals one of the roots of unity in S={omega^{0},...,omega^{m-1}}
+     then output 1 at the right place, and 0 elsewhere
+     */
+
+    if ((t^m) == (FieldT::one()))
+    {
+        FieldT omega_i = FieldT::one();
+        for (size_t i = 0; i < m; ++i)
+        {
+            if (omega_i == t) // i.e., t equals omega^i
+            {
+                u[i] = FieldT::one();
+                return u;
+            }
+
+            omega_i *= omega;
+        }
+    }
+
+    /*
+     Otherwise, if t does not equal any of the roots of unity in S,
+     then compute each L_{i,S}(t) as Z_{S}(t) * v_i / (t-\omega^i)
+     where:
+     - Z_{S}(t) = \prod_{j} (t-\omega^j) = (t^m-1), and
+     - v_{i} = 1 / \prod_{j \neq i} (\omega^i-\omega^j).
+     Below we use the fact that v_{0} = 1/m and v_{i+1} = \omega * v_{i}. 
+     // 计算依据见《Behavior of the Lagrange Interpolants in the Roots of unity.pdf》中的Ln-1(f, z)的系数
+     // S=[f(1),f(w),f(w^2),....,f(w^m-1)]
+     */
+
+    const FieldT Z = (t^m)-FieldT::one();
+    FieldT l = Z * FieldT(m).inverse();
+    FieldT r = FieldT::one();
+    for (size_t i = 0; i < m; ++i)
+    {
+        u[i] = l * (t - r).inverse();
+        l *= omega;
+        r *= omega;
+    }
+
+    return u;
+}

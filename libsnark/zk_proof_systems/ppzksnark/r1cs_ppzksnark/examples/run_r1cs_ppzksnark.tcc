@@ -94,12 +94,12 @@ bool run_r1cs_ppzksnark(const r1cs_example<libff::Fr<ppT> > &example,
     }
 
     libff::print_header("R1CS ppzkSNARK Verifier");
-    const bool ans = r1cs_ppzksnark_verifier_strong_IC<ppT>(keypair.vk, example.primary_input, proof);
+    const bool ans = r1cs_ppzksnark_verifier_strong_IC<ppT>(keypair.vk, example.primary_input, proof);//封装而已，其内部实现跟r1cs_ppzksnark_online_verifier_strong_IC完全一样。accepts a non-processed verification key
     printf("\n"); libff::print_indent(); libff::print_mem("after verifier");
     printf("* The verification result is: %s\n", (ans ? "PASS" : "FAIL"));
 
     libff::print_header("R1CS ppzkSNARK Online Verifier");
-    const bool ans2 = r1cs_ppzksnark_online_verifier_strong_IC<ppT>(pvk, example.primary_input, proof);
+    const bool ans2 = r1cs_ppzksnark_online_verifier_strong_IC<ppT>(pvk, example.primary_input, proof);//accepts a processed verification key,
     assert(ans == ans2);
 
     test_affine_verifier<ppT>(keypair.vk, example.primary_input, proof, ans);

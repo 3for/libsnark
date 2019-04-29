@@ -465,6 +465,8 @@ r1cs_ppzksnark_proof<ppT> r1cs_ppzksnark_prover(const r1cs_ppzksnark_proving_key
         d3 = libff::Fr<ppT>::random_element();
 
     libff::enter_block("Compute the polynomial H");
+    //r1cs_to_qap_witness_map背后意义 可参看V神博客《Quadratic Arithmetic Programs: from Zero to Hero》中的由R1CS to QAP章节。
+    //代码实现基于[BCGTV13] SNARKs for C: Verifying Program Executions Succinctly and in Zero Knowledge.
     const qap_witness<libff::Fr<ppT> > qap_wit = r1cs_to_qap_witness_map(pk.constraint_system, primary_input, auxiliary_input, d1, d2, d3);
     libff::leave_block("Compute the polynomial H");
 
@@ -474,6 +476,7 @@ r1cs_ppzksnark_proof<ppT> r1cs_ppzksnark_prover(const r1cs_ppzksnark_proving_key
     assert(qap_inst.is_satisfied(qap_wit));
 #endif
 
+    //与生成pkA,pkB,pkC的G1/G2对应。pkA:G1&G1, pkB:G2&G1, pkC:G1&G1.
     knowledge_commitment<libff::G1<ppT>, libff::G1<ppT> > g_A = pk.A_query[0] + qap_wit.d1*pk.A_query[qap_wit.num_variables()+1];
     knowledge_commitment<libff::G2<ppT>, libff::G1<ppT> > g_B = pk.B_query[0] + qap_wit.d2*pk.B_query[qap_wit.num_variables()+1];
     knowledge_commitment<libff::G1<ppT>, libff::G1<ppT> > g_C = pk.C_query[0] + qap_wit.d3*pk.C_query[qap_wit.num_variables()+1];
@@ -596,6 +599,7 @@ bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verif
     assert(pvk.encoded_IC_query.domain_size() >= primary_input.size());
 
     libff::enter_block("Compute input-dependent part of A");
+    //对应[BCTV14] Page25 Verifier V step 1.
     const accumulation_vector<libff::G1<ppT> > accumulated_IC = pvk.encoded_IC_query.template accumulate_chunk<libff::Fr<ppT> >(primary_input.begin(), primary_input.end(), 0);
     const libff::G1<ppT> &acc = accumulated_IC.first;
     libff::leave_block("Compute input-dependent part of A");
@@ -603,7 +607,7 @@ bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verif
     bool result = true;
 
     libff::enter_block("Check if the proof is well-formed");
-    if (!proof.is_well_formed())
+    if (!proof.is_well_formed()) //即判定相关点均在其应属于的曲线上，无论是G1还是G2 twist curve.
     {
         if (!libff::inhibit_profiling_info)
         {
@@ -613,6 +617,7 @@ bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verif
     }
     libff::leave_block("Check if the proof is well-formed");
 
+    //对应[BCTV14] Page25 Verifier V step 2.
     libff::enter_block("Online pairing computations");
     libff::enter_block("Check knowledge commitment for A is valid");
     libff::G1_precomp<ppT> proof_g_A_g_precomp      = ppT::precompute_G1(proof.g_A.g);
@@ -662,6 +667,7 @@ bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verif
     }
     libff::leave_block("Check knowledge commitment for C is valid");
 
+    //对应[BCTV14] Page25 Verifier V step 4.
     libff::enter_block("Check QAP divisibility");
     // check that g^((A+acc)*B)=g^(H*\Prod(t-\sigma)+C)
     // equivalently, via pairings, that e(g^(A+acc), g^B) = e(g^H, g^Z) + e(g^C, g^1)
@@ -680,6 +686,7 @@ bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verif
     }
     libff::leave_block("Check QAP divisibility");
 
+    //对应[BCTV14] Page25 Verifier V step 3.
     libff::enter_block("Check same coefficients were used");
     libff::G1_precomp<ppT> proof_g_K_precomp = ppT::precompute_G1(proof.g_K);
     libff::G1_precomp<ppT> proof_g_A_g_acc_C_precomp = ppT::precompute_G1((proof.g_A.g + acc) + proof.g_C.g);

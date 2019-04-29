@@ -1,0 +1,203 @@
+```
+	libff::print_header("R1CS ppzkSNARK Verifier");
+    const bool ans = r1cs_ppzksnark_verifier_strong_IC<ppT>(keypair.vk, example.primary_input, proof);
+    printf("\n"); libff::print_indent(); libff::print_mem("after verifier");
+    printf("* The verification result is: %s\n", (ans ? "PASS" : "FAIL"));
+```
+
+```
+/**
+ * A verifier algorithm for the R1CS ppzkSNARK that:
+ * (1) accepts a non-processed verification key, and
+ * (2) has strong input consistency.
+ */
+template<typename ppT>
+bool r1cs_ppzksnark_verifier_strong_IC(const r1cs_ppzksnark_verification_key<ppT> &vk,
+                                       const r1cs_ppzksnark_primary_input<ppT> &primary_input,
+                                       const r1cs_ppzksnark_proof<ppT> &proof);
+									   
+
+template<typename ppT>
+bool r1cs_ppzksnark_verifier_strong_IC(const r1cs_ppzksnark_verification_key<ppT> &vk,
+                                       const r1cs_ppzksnark_primary_input<ppT> &primary_input,
+                                       const r1cs_ppzksnark_proof<ppT> &proof)
+{
+    libff::enter_block("Call to r1cs_ppzksnark_verifier_strong_IC");
+    r1cs_ppzksnark_processed_verification_key<ppT> pvk = r1cs_ppzksnark_verifier_process_vk<ppT>(vk);
+    bool result = r1cs_ppzksnark_online_verifier_strong_IC<ppT>(pvk, primary_input, proof);
+    libff::leave_block("Call to r1cs_ppzksnark_verifier_strong_IC");
+    return result;
+}
+```	
+
+```
+template<typename ppT>
+bool r1cs_ppzksnark_online_verifier_strong_IC(const r1cs_ppzksnark_processed_verification_key<ppT> &pvk,
+                                              const r1cs_ppzksnark_primary_input<ppT> &primary_input,
+                                              const r1cs_ppzksnark_proof<ppT> &proof)
+{
+    bool result = true;
+    libff::enter_block("Call to r1cs_ppzksnark_online_verifier_strong_IC");
+
+    if (pvk.encoded_IC_query.domain_size() != primary_input.size())
+    {
+        libff::print_indent(); printf("Input length differs from expected (got %zu, expected %zu).\n", primary_input.size(), pvk.encoded_IC_query.domain_size());
+        result = false;
+    }
+    else
+    {
+        result = r1cs_ppzksnark_online_verifier_weak_IC(pvk, primary_input, proof);
+    }
+
+    libff::leave_block("Call to r1cs_ppzksnark_online_verifier_strong_IC");
+    return result;
+}
+```
+
+```
+/**
+ * A verifier algorithm for the R1CS ppzkSNARK that:
+ * (1) accepts a processed verification key, and
+ * (2) has weak input consistency.
+ */
+template<typename ppT>
+bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verification_key<ppT> &pvk,
+                                            const r1cs_ppzksnark_primary_input<ppT> &input,
+                                            const r1cs_ppzksnark_proof<ppT> &proof);
+
+
+template <typename ppT>
+bool r1cs_ppzksnark_online_verifier_weak_IC(const r1cs_ppzksnark_processed_verification_key<ppT> &pvk,
+                                            const r1cs_ppzksnark_primary_input<ppT> &primary_input,
+                                            const r1cs_ppzksnark_proof<ppT> &proof)
+{
+    libff::enter_block("Call to r1cs_ppzksnark_online_verifier_weak_IC");
+    assert(pvk.encoded_IC_query.domain_size() >= primary_input.size());
+
+    libff::enter_block("Compute input-dependent part of A");
+    const accumulation_vector<libff::G1<ppT> > accumulated_IC = pvk.encoded_IC_query.template accumulate_chunk<libff::Fr<ppT> >(primary_input.begin(), primary_input.end(), 0);
+    const libff::G1<ppT> &acc = accumulated_IC.first;
+    libff::leave_block("Compute input-dependent part of A");
+
+    bool result = true;
+
+    libff::enter_block("Check if the proof is well-formed");
+    if (!proof.is_well_formed())
+    {
+        if (!libff::inhibit_profiling_info)
+        {
+            libff::print_indent(); printf("At least one of the proof elements does not lie on the curve.\n");
+        }
+        result = false;
+    }
+    libff::leave_block("Check if the proof is well-formed");
+
+    libff::enter_block("Online pairing computations");
+    libff::enter_block("Check knowledge commitment for A is valid");
+    libff::G1_precomp<ppT> proof_g_A_g_precomp      = ppT::precompute_G1(proof.g_A.g);
+    libff::G1_precomp<ppT> proof_g_A_h_precomp = ppT::precompute_G1(proof.g_A.h);
+    libff::Fqk<ppT> kc_A_1 = ppT::miller_loop(proof_g_A_g_precomp,      pvk.vk_alphaA_g2_precomp);
+    libff::Fqk<ppT> kc_A_2 = ppT::miller_loop(proof_g_A_h_precomp, pvk.pp_G2_one_precomp);
+    libff::GT<ppT> kc_A = ppT::final_exponentiation(kc_A_1 * kc_A_2.unitary_inverse());
+    if (kc_A != libff::GT<ppT>::one())
+    {
+        if (!libff::inhibit_profiling_info)
+        {
+            libff::print_indent(); printf("Knowledge commitment for A query incorrect.\n");
+        }
+        result = false;
+    }
+    libff::leave_block("Check knowledge commitment for A is valid");
+
+    libff::enter_block("Check knowledge commitment for B is valid");
+    libff::G2_precomp<ppT> proof_g_B_g_precomp      = ppT::precompute_G2(proof.g_B.g);
+    libff::G1_precomp<ppT> proof_g_B_h_precomp = ppT::precompute_G1(proof.g_B.h);
+    libff::Fqk<ppT> kc_B_1 = ppT::miller_loop(pvk.vk_alphaB_g1_precomp, proof_g_B_g_precomp);
+    libff::Fqk<ppT> kc_B_2 = ppT::miller_loop(proof_g_B_h_precomp,    pvk.pp_G2_one_precomp);
+    libff::GT<ppT> kc_B = ppT::final_exponentiation(kc_B_1 * kc_B_2.unitary_inverse());
+    if (kc_B != libff::GT<ppT>::one())
+    {
+        if (!libff::inhibit_profiling_info)
+        {
+            libff::print_indent(); printf("Knowledge commitment for B query incorrect.\n");
+        }
+        result = false;
+    }
+    libff::leave_block("Check knowledge commitment for B is valid");
+
+    libff::enter_block("Check knowledge commitment for C is valid");
+    libff::G1_precomp<ppT> proof_g_C_g_precomp      = ppT::precompute_G1(proof.g_C.g);
+    libff::G1_precomp<ppT> proof_g_C_h_precomp = ppT::precompute_G1(proof.g_C.h);
+    libff::Fqk<ppT> kc_C_1 = ppT::miller_loop(proof_g_C_g_precomp,      pvk.vk_alphaC_g2_precomp);
+    libff::Fqk<ppT> kc_C_2 = ppT::miller_loop(proof_g_C_h_precomp, pvk.pp_G2_one_precomp);
+    libff::GT<ppT> kc_C = ppT::final_exponentiation(kc_C_1 * kc_C_2.unitary_inverse());
+    if (kc_C != libff::GT<ppT>::one())
+    {
+        if (!libff::inhibit_profiling_info)
+        {
+            libff::print_indent(); printf("Knowledge commitment for C query incorrect.\n");
+        }
+        result = false;
+    }
+    libff::leave_block("Check knowledge commitment for C is valid");
+
+    libff::enter_block("Check QAP divisibility");
+    // check that g^((A+acc)*B)=g^(H*\Prod(t-\sigma)+C)
+    // equivalently, via pairings, that e(g^(A+acc), g^B) = e(g^H, g^Z) + e(g^C, g^1)
+    libff::G1_precomp<ppT> proof_g_A_g_acc_precomp = ppT::precompute_G1(proof.g_A.g + acc);
+    libff::G1_precomp<ppT> proof_g_H_precomp       = ppT::precompute_G1(proof.g_H);
+    libff::Fqk<ppT> QAP_1  = ppT::miller_loop(proof_g_A_g_acc_precomp,  proof_g_B_g_precomp);
+    libff::Fqk<ppT> QAP_23  = ppT::double_miller_loop(proof_g_H_precomp, pvk.vk_rC_Z_g2_precomp, proof_g_C_g_precomp, pvk.pp_G2_one_precomp);
+    libff::GT<ppT> QAP = ppT::final_exponentiation(QAP_1 * QAP_23.unitary_inverse());
+    if (QAP != libff::GT<ppT>::one())
+    {
+        if (!libff::inhibit_profiling_info)
+        {
+            libff::print_indent(); printf("QAP divisibility check failed.\n");
+        }
+        result = false;
+    }
+    libff::leave_block("Check QAP divisibility");
+
+    libff::enter_block("Check same coefficients were used");
+    libff::G1_precomp<ppT> proof_g_K_precomp = ppT::precompute_G1(proof.g_K);
+    libff::G1_precomp<ppT> proof_g_A_g_acc_C_precomp = ppT::precompute_G1((proof.g_A.g + acc) + proof.g_C.g);
+    libff::Fqk<ppT> K_1 = ppT::miller_loop(proof_g_K_precomp, pvk.vk_gamma_g2_precomp);
+    libff::Fqk<ppT> K_23 = ppT::double_miller_loop(proof_g_A_g_acc_C_precomp, pvk.vk_gamma_beta_g2_precomp, pvk.vk_gamma_beta_g1_precomp, proof_g_B_g_precomp);
+    libff::GT<ppT> K = ppT::final_exponentiation(K_1 * K_23.unitary_inverse());
+    if (K != libff::GT<ppT>::one())
+    {
+        if (!libff::inhibit_profiling_info)
+        {
+            libff::print_indent(); printf("Same-coefficient check failed.\n");
+        }
+        result = false;
+    }
+    libff::leave_block("Check same coefficients were used");
+    libff::leave_block("Online pairing computations");
+    libff::leave_block("Call to r1cs_ppzksnark_online_verifier_weak_IC");
+
+    return result;
+}											
+```
+
+```
+template<typename T>
+template<typename FieldT>
+accumulation_vector<T> accumulation_vector<T>::accumulate_chunk(const typename std::vector<FieldT>::const_iterator &it_begin,
+                                                                const typename std::vector<FieldT>::const_iterator &it_end,
+                                                                const size_t offset) const
+{
+    std::pair<T, sparse_vector<T> > acc_result = rest.template accumulate<FieldT>(it_begin, it_end, offset);
+    T new_first = first + acc_result.first;
+    return accumulation_vector<T>(std::move(new_first), std::move(acc_result.second));
+}
+
+ /* return a pair consisting of the accumulated value and the sparse vector of non-accumulated values */
+    template<typename FieldT>
+    std::pair<T, sparse_vector<T> > accumulate(const typename std::vector<FieldT>::const_iterator &it_begin,
+                                               const typename std::vector<FieldT>::const_iterator &it_end,
+                                               const size_t offset) const;
+
+											   
+```

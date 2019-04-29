@@ -1,0 +1,11 @@
+TODO:
+1） 用magma验下实际运行ppzksnark程序r1cs_to_qap_witness_map()中get_evaluation_domain返回的domain.omega值是否符合预期。
+
+2） 看下auxiliary_input vector的length是多少？及其作用？
+
+3） r1cs_to_qap_witness_map() 中基于有限域的Lagrange插值计算论文依据。
+
+4） 根据论文【BCTV14】中说明，r1cs_to_qap_witness_map()实现依据应是论文【BCGTV13】，待细确认。。。
+
+
+

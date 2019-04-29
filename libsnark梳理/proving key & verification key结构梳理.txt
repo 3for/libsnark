@@ -165,6 +165,17 @@ public:
     static r1cs_ppzksnark_verification_key<ppT> dummy_verification_key(const size_t input_size);
 };
 
+/**
+ * An accumulation vector comprises an accumulation value and a sparse vector.
+ * The method "accumulate_chunk" allows one to accumlate portions of the sparse
+ * vector into the accumualation value.
+ */
+template<typename T>
+class accumulation_vector {
+public:
+    T first;
+    sparse_vector<T> rest;
+};
 
 /**
  * A processed verification key for the R1CS ppzkSNARK.
