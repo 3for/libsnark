@@ -1,0 +1,34 @@
+template<typename FieldT>
+void pb_variable<FieldT>::allocate(protoboard<FieldT> &pb, const std::string &annotation)
+{
+    this->index = pb.allocate_var_index(annotation);
+}
+
+/* allocates pb_variable<FieldT> array in MSB->LSB order */
+template<typename FieldT>
+void pb_variable_array<FieldT>::allocate(protoboard<FieldT> &pb, const size_t n, const std::string &annotation_prefix)
+{
+#ifdef DEBUG
+    assert(annotation_prefix != "");
+#endif
+    (*this).resize(n);
+
+    for (size_t i = 0; i < n; ++i)
+    {
+        (*this)[i].allocate(pb, FMT(annotation_prefix, "_%zu", i));
+    }
+}
+
+template<typename FieldT>
+var_index_t protoboard<FieldT>::allocate_var_index(const std::string &annotation)
+{
+#ifdef DEBUG
+    assert(annotation != "");
+    constraint_system.variable_annotations[next_free_var] = annotation;
+#else
+    libff::UNUSED(annotation);
+#endif
+    ++constraint_system.auxiliary_input_size;
+    values.emplace_back(FieldT::zero());
+    return next_free_var++;
+}

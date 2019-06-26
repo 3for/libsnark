@@ -1,0 +1,165 @@
+template<typename FieldT>
+class block_variable : public gadget<FieldT> { 
+public:
+    size_t block_size;
+    pb_variable_array<FieldT> bits;
+
+    block_variable(protoboard<FieldT> &pb, //会allocate protoboard
+                   const size_t block_size,
+                   const std::string &annotation_prefix);
+
+    block_variable(protoboard<FieldT> &pb, //不会allocate protoboard
+                   const std::vector<pb_variable_array<FieldT> > &parts,
+                   const std::string &annotation_prefix);
+
+    block_variable(protoboard<FieldT> &pb, //不会allocate protoboard
+                   const digest_variable<FieldT> &left,
+                   const digest_variable<FieldT> &right,
+                   const std::string &annotation_prefix);
+
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness(const libff::bit_vector& contents);
+    libff::bit_vector get_block() const;
+};
+
+template<typename FieldT>
+class digest_variable : public gadget<FieldT> { 
+public:
+    size_t digest_size;
+    pb_variable_array<FieldT> bits;
+
+    digest_variable<FieldT>(protoboard<FieldT> &pb,
+                            const size_t digest_size,
+                            const std::string &annotation_prefix); //会allocate protoboard
+
+    digest_variable<FieldT>(protoboard<FieldT> &pb,
+                            const size_t digest_size,
+                            const pb_variable_array<FieldT> &partial_bits,
+                            const pb_variable<FieldT> &padding,
+                            const std::string &annotation_prefix); //不会allocate protoboard
+
+
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness(const libff::bit_vector& contents);
+    libff::bit_vector get_digest() const;
+};
+
+
+template<typename FieldT>
+class packing_gadget : public gadget<FieldT> { //不会allocate protoboard
+private:
+    /* no internal variables */
+public:
+    const pb_linear_combination_array<FieldT> bits;
+    const pb_linear_combination<FieldT> packed;
+
+    packing_gadget(protoboard<FieldT> &pb,
+                   const pb_linear_combination_array<FieldT> &bits,
+                   const pb_linear_combination<FieldT> &packed,
+                   const std::string &annotation_prefix="") :
+        gadget<FieldT>(pb, annotation_prefix), bits(bits), packed(packed) {}
+
+    void generate_r1cs_constraints(const bool enforce_bitness);
+    /* adds constraint result = \sum  bits[i] * 2^i */
+
+    void generate_r1cs_witness_from_packed();
+    void generate_r1cs_witness_from_bits();
+};
+
+template<typename FieldT>
+class multipacking_gadget : public gadget<FieldT> { //不会allocate protoboard
+private:
+    std::vector<packing_gadget<FieldT> > packers;
+public:
+    const pb_linear_combination_array<FieldT> bits;
+    const pb_linear_combination_array<FieldT> packed_vars;
+
+    const size_t chunk_size;
+    const size_t num_chunks;
+    // const size_t last_chunk_size;
+
+    multipacking_gadget(protoboard<FieldT> &pb,
+                        const pb_linear_combination_array<FieldT> &bits,
+                        const pb_linear_combination_array<FieldT> &packed_vars,
+                        const size_t chunk_size,
+                        const std::string &annotation_prefix="");
+    void generate_r1cs_constraints(const bool enforce_bitness);
+    void generate_r1cs_witness_from_packed();
+    void generate_r1cs_witness_from_bits();
+};
+
+
+template<typename FieldT>
+class pb_variable_array : private std::vector<pb_variable<FieldT> >
+{
+    typedef std::vector<pb_variable<FieldT> > contents;
+public:
+    using typename contents::iterator;
+    using typename contents::const_iterator;
+    using typename contents::reverse_iterator;
+    using typename contents::const_reverse_iterator;
+
+    using contents::begin;
+    using contents::end;
+    using contents::rbegin;
+    using contents::rend;
+    using contents::emplace_back;
+    using contents::insert;
+    using contents::reserve;
+    using contents::size;
+    using contents::empty;
+    using contents::operator[];
+    using contents::resize;
+
+    pb_variable_array() : contents() {};
+    pb_variable_array(size_t count, const pb_variable<FieldT> &value) : contents(count, value) {};
+    pb_variable_array(typename contents::const_iterator first, typename contents::const_iterator last) : contents(first, last) {};
+    pb_variable_array(typename contents::const_reverse_iterator first, typename contents::const_reverse_iterator last) : contents(first, last) {};
+    void allocate(protoboard<FieldT> &pb, const size_t n, const std::string &annotation_prefix="");
+
+    void fill_with_field_elements(protoboard<FieldT> &pb, const std::vector<FieldT>& vals) const;
+    void fill_with_bits(protoboard<FieldT> &pb, const libff::bit_vector& bits) const;
+    void fill_with_bits_of_ulong(protoboard<FieldT> &pb, const unsigned long i) const;
+    void fill_with_bits_of_field_element(protoboard<FieldT> &pb, const FieldT &r) const;
+
+    std::vector<FieldT> get_vals(const protoboard<FieldT> &pb) const;
+    libff::bit_vector get_bits(const protoboard<FieldT> &pb) const;
+
+    FieldT get_field_element_from_bits(const protoboard<FieldT> &pb) const;
+};
+
+/**
+ * Gadget for the SHA256 compression function.
+ */
+template<typename FieldT>
+class sha256_compression_function_gadget : public gadget<FieldT> {  
+public:
+    std::vector<pb_linear_combination_array<FieldT> > round_a;
+    std::vector<pb_linear_combination_array<FieldT> > round_b;
+    std::vector<pb_linear_combination_array<FieldT> > round_c;
+    std::vector<pb_linear_combination_array<FieldT> > round_d;
+    std::vector<pb_linear_combination_array<FieldT> > round_e;
+    std::vector<pb_linear_combination_array<FieldT> > round_f;
+    std::vector<pb_linear_combination_array<FieldT> > round_g;
+    std::vector<pb_linear_combination_array<FieldT> > round_h;
+
+    pb_variable_array<FieldT> packed_W;
+    std::shared_ptr<sha256_message_schedule_gadget<FieldT> > message_schedule;
+    std::vector<sha256_round_function_gadget<FieldT> > round_functions;
+
+    pb_variable_array<FieldT> unreduced_output;
+    pb_variable_array<FieldT> reduced_output;
+    std::vector<lastbits_gadget<FieldT> > reduce_output;
+public:
+    pb_linear_combination_array<FieldT> prev_output;
+    pb_variable_array<FieldT> new_block;
+    digest_variable<FieldT> output;
+
+    sha256_compression_function_gadget(protoboard<FieldT> &pb, //会allocate protoboard
+                                       const pb_linear_combination_array<FieldT> &prev_output,
+                                       const pb_variable_array<FieldT> &new_block,
+                                       const digest_variable<FieldT> &output,
+                                       const std::string &annotation_prefix);
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness();
+};
